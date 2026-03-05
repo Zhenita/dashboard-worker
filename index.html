@@ -292,7 +292,7 @@ const BM = {
   '待开票':['var(--orange)','var(--orange-bg)'],'已开票':['var(--green)','var(--green-bg)'],
   '履约中':['var(--blue)','var(--blue-bg)'],'已完结':['var(--green)','var(--green-bg)'],
   '未还':['var(--red)','var(--red-bg)'],'部分还':['var(--orange)','var(--orange-bg)'],
-  '已还清':['var(--green)','var(--green-bg)'],'供应商下单':['var(--orange)','var(--orange-bg)'],
+  '已还清':['var(--green)','var(--green-bg)'],'供应商制单':['var(--orange)','var(--orange-bg)'],
   '我司出单':['var(--blue)','var(--blue-bg)'],'客户下单':['var(--teal)','var(--teal-bg)'],
   '供应商制单':['var(--orange)','var(--orange-bg)'],
   '月度报告':['var(--teal)','var(--teal-bg)'],'普通订单':['var(--t3)','rgba(0,0,0,.07)'],
@@ -399,7 +399,7 @@ function bTable(orders, pfx) {
    OCR / SCANNER — 字段映射对齐飞书
 ══════════════════════════════════════════════ */
 const FM = {
-  production:[{f:"supplier",t:"供应商",fs:"供应商"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"payment",t:"备注",fs:"备注"},{f:"_auto",t:"来源",fs:"来源",v:"供应商下单"}],
+  production:[{f:"supplier",t:"供应商",fs:"供应商"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"payment",t:"备注",fs:"备注"},{f:"_auto",t:"来源",fs:"来源",v:"供应商制单"}],
   b2b:[{f:"supplier",t:"客户名称",fs:"客户名称"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"_auto",t:"来源",fs:"来源",v:"客户下单"}],
   ship_in:[{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"收货"},{f:"supplier",t:"对方名称",fs:"对方名称"},{f:"docNo",t:"关联订单号",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}],
   ship_out:[{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"发货"},{f:"supplier",t:"对方名称",fs:"对方名称"},{f:"docNo",t:"关联订单号",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}],
@@ -570,7 +570,7 @@ function pgOrd(){
   const fil=ordF==='all'?DB.productionOrders:DB.productionOrders.filter(o=>(o.source||'手动')===ordF);
   return `<div class="phdr"><div class="pt">📦 下单 · 出货 · 付款跟进</div><div class="ps">点击订单行展开明细</div></div>
   <div class="g3">${kpi('订单总额','¥'+F(tot),'','var(--amt-total)')}${kpi('已付','¥'+F(paid),'','var(--amt-paid)')}${kpi('待付','¥'+F(tot-paid),'','var(--amt-due)')}</div>
-  <div class="sec"><div class="pills">${['all','供应商下单','供应商制单','我司出单','客户下单'].map(f=>`<button class="pill${ordF===f?' on':''}" onclick="ordF='${f}';render()">${f==='all'?'全部':f}</button>`).join('')}</div>
+  <div class="sec"><div class="pills">${['all','供应商制单','供应商制单','我司出单','客户下单'].map(f=>`<button class="pill${ordF===f?' on':''}" onclick="ordF='${f}';render()">${f==='all'?'全部':f}</button>`).join('')}</div>
   <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU</th><th>产品名称</th><th>数量</th><th>总金额</th><th>已付</th><th>待付</th><th>状态</th><th>付款</th></tr></thead><tbody>${prodTable(fil,'po')}</tbody></table></div></div></div>`;
 }
 
