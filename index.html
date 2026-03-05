@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>N7R 业务看板</title>
+<title>业务看板</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -212,8 +212,8 @@ tbody tr:hover td{background:rgba(0,0,0,.015)}
 
 <header>
   <div class="logo">
-    <div class="logo-chip">N7R</div>
-    <span class="logo-title">N7R 业务看板</span>
+    <div class="logo-chip">B2B</div>
+    <span class="logo-title">业务看板</span>
     <div class="logo-sep"></div>
     <span class="logo-sub">飞书实时同步</span>
   </div>
@@ -230,14 +230,13 @@ tbody tr:hover td{background:rgba(0,0,0,.015)}
 
 <script>
 /* ══════════════════════════════════════════════
-   CONFIG & STORAGE — 分离两个 Worker URL
+   CONFIG & STORAGE
 ══════════════════════════════════════════════ */
-const CK = 'n7r-cfg-v6';  // 版本号更新
+const CK = 'n7r-cfg-v6';
 let cfg = {
-  dashboardUrl: 'https://ocr-tool.zhenita.workers.dev',  // ← 业务看板数据 Worker
-  ocrUrl:       'https://ocr-tool.zhenita.workers.dev',  // ← OCR/Gemini Worker (可以是同一个，但逻辑分离)
+  dashboardUrl: 'https://ocr-tool.zhenita.workers.dev', 
+  ocrUrl:       'https://ocr-tool.zhenita.workers.dev',
 };
-// Load from storage
 try {
   const s = localStorage.getItem(CK);
   if (s) cfg = { ...cfg, ...JSON.parse(s) };
@@ -246,9 +245,21 @@ const saveC = () => localStorage.setItem(CK, JSON.stringify(cfg));
 const du = p => cfg.dashboardUrl.replace(/\/$/, '') + p;
 const ou = p => cfg.ocrUrl.replace(/\/$/, '') + p;
 
-// OCR history shared storage
 const getHist = () => { try { return JSON.parse(localStorage.getItem('n7r-hist')) || []; } catch { return []; } };
 const saveHist = h => { try { localStorage.setItem('n7r-hist', JSON.stringify(h.slice(0, 50))); } catch {} };
+
+// ── 全局配置保存函数 ──
+window.saveFsField = function(key, val) {
+  if (!cfg.fs) cfg.fs = {};
+  cfg.fs[key] = val;
+  saveC();
+};
+window.saveFsTid = function(tableKey, val) {
+  if (!cfg.fs) cfg.fs = {};
+  if (!cfg.fs[tableKey]) cfg.fs[tableKey] = {};
+  cfg.fs[tableKey].tid = val;
+  saveC();
+};
 
 /* ══════════════════════════════════════════════
    DATA
@@ -389,15 +400,15 @@ function bTable(orders, pfx) {
 }
 
 /* ══════════════════════════════════════════════
-   OCR / SCANNER ENGINE
+   OCR / SCANNER ENGINE (已应用映射修正)
 ══════════════════════════════════════════════ */
 const FM = {
-  production:[{f:"supplier",t:"供应商",fs:"供应商"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"下单数量",fs:"下单数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"payment",t:"备注",fs:"备注"},{f:"_auto",t:"来源",fs:"来源",v:"供应商下单"}],
+  production:[{f:"supplier",t:"供应商",fs:"供应商"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"payment",t:"备注",fs:"备注"},{f:"_auto",t:"来源",fs:"来源",v:"供应商下单"}],
   b2b:[{f:"supplier",t:"客户名称",fs:"客户名称"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"_auto",t:"来源",fs:"来源",v:"客户下单"}],
-  ship_in:[{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"收货"},{f:"supplier",t:"供应商",fs:"对方名称"},{f:"docNo",t:"关联生产订单",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}],
-  ship_out:[{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"发货"},{f:"supplier",t:"客户",fs:"对方名称"},{f:"docNo",t:"关联B端订单",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}],
-  advance:[{f:"date",t:"日期",fs:"日期"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"垫付金额",fs:"垫付金额"},{f:"notes",t:"用途说明",fs:"用途说明"},{f:"supplier",t:"付款对象",fs:"备注"},{f:"_auto",t:"还款状态",fs:"还款状态",v:"未还"}],
-  invoice:[{f:"docNo",t:"发票号",fs:"发票号"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"开票金额",fs:"开票金额"},{f:"supplier",t:"客户",fs:"客户名称"},{f:"date",t:"日期",fs:"备注"},{f:"_auto",t:"开票状态",fs:"开票状态",v:"已开票"}],
+  ship_in:[{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"收货"},{f:"supplier",t:"对方名称",fs:"对方名称"},{f:"docNo",t:"关联订单号",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}],
+  ship_out:[{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"发货"},{f:"supplier",t:"对方名称",fs:"对方名称"},{f:"docNo",t:"关联订单号",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}],
+  advance:[{f:"date",t:"日期",fs:"日期"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"垫付金额",fs:"垫付金额"},{f:"notes",t:"用途说明",fs:"用途说明"},{f:"_auto",t:"还款状态",fs:"还款状态",v:"未还"},{f:"supplier",t:"备注",fs:"备注"}],
+  invoice:[{f:"docNo",t:"发票号",fs:"发票号"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"开票金额",fs:"开票金额"},{f:"supplier",t:"客户名称",fs:"客户名称"},{f:"_auto",t:"开票状态",fs:"开票状态",v:"已开票"},{f:"date",t:"备注",fs:"备注"}],
 };
 
 const SCAN_TABLES = [
@@ -480,7 +491,6 @@ async function runExtract() {
     if (f.type.startsWith('image/') && f.size > 1e6) fd.append('file', await compress(f), f.name);
     else fd.append('file', f);
     
-    // ← 使用 OCR Worker URL (分离的 Gemini Worker)
     const r = await fetch(ou('/'), { method:'POST', body:fd });
     const d = await r.json();
     SC.result = d;
@@ -490,14 +500,15 @@ async function runExtract() {
   render();
 }
 
+// ── 已修复：使用全局 App Token (fs.at) ──
 async function runSaveToFeishu() {
   const key = SC.target, mp = SC.mapping;
   if (!key || !mp) return;
   const ck = cfgKey(key);
   const fs = cfg.fs || {};
-  const aid = fs.aid, as = fs.as;
+  const aid = fs.aid, as = fs.as, at = fs.at;
   const fc = fs[ck];
-  if (!aid || !as || !fc?.at || !fc?.tid) {
+  if (!aid || !as || !at || !fc?.tid) {
     SC.msg = { fail: '请先在「⚙ 配置」页完成飞书连接配置' }; render(); return;
   }
   SC.saving = true; SC.msg = null; render();
@@ -509,36 +520,30 @@ async function runSaveToFeishu() {
       const records = res.items.map(it => {
         const row = { ...mp };
         row['产品名称'] = it.item||it.name||it.sku||'';
-        if (key==='production') row['下单数量'] = it.qty||'';
-        else row['数量'] = it.qty||'';
+        row['数量'] = it.qty||'';
         row['订单金额'] = it.subtotal||it.amount||'';
         return buildFields(key, row);
       });
-      // ← 使用 OCR Worker 的 /feishu 端点
-      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:fc.at,tableId:fc.tid,records}) });
+      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,records}) });
       cr = await r.json();
       if (cr.code===0) {
         SC.msg = { ok: `${cr.data?.success_count||records.length} 行写入成功 ✓` };
-        const h = getHist();
-        saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:`batch-${cr.data?.success_count}`},...h]);
+        const h = getHist(); saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:`batch-${cr.data?.success_count}`},...h]);
         doSync();
-      } else SC.msg = { fail: cr.msg||'写入失败' };
+      } else SC.msg = { fail: (cr.msg||'写入失败')+(cr.debug_fields?'\n飞书字段: '+cr.debug_fields.join(', '):'') };
     } else {
       const fields = buildFields(key, mp);
-      // ← 使用 OCR Worker 的 /feishu 端点
-      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:fc.at,tableId:fc.tid,fields}) });
+      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,fields}) });
       cr = await r.json();
       if (cr.code===0) {
         const rid = cr.data?.record?.record_id;
         SC.msg = { ok: `写入成功 · Record: ${rid}` };
-        const h = getHist();
-        saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid},...h]);
+        const h = getHist(); saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid},...h]);
         doSync();
-      } else SC.msg = { fail: cr.msg||'写入失败' };
+      } else SC.msg = { fail: (cr.msg||'写入失败')+(cr.debug_fields?'\n飞书字段: '+cr.debug_fields.join(', '):'') };
     }
   } catch(e) { SC.msg = { fail: e.message }; }
-  SC.saving = false;
-  render();
+  SC.saving = false; render();
 }
 
 /* ══════════════════════════════════════════════
@@ -560,7 +565,8 @@ function histDel(i){
   const h=getHist(); h.splice(i,1); saveHist(h); HIST_OPEN.delete(i); render();
 }
 
-async function histSendFeishu(i){
+// ── 已修复：使用全局 App Token (fs.at) ──
+async function histSendFeishu(i) {
   const h=getHist(); const x=h[i]; if(!x) return;
   const btn=document.getElementById('hbtn-'+i);
   const msgEl=document.getElementById('hmsg-'+i);
@@ -569,8 +575,8 @@ async function histSendFeishu(i){
   const ck=x.t==='ship_out'?'ship_in':x.t;
   const fs=cfg.fs||{};
   const fc=fs[ck];
-  if(!fs.aid||!fs.as||!fc?.at||!fc?.tid){
-    if(msgEl) msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ 请先在配置页填写飞书信息</div>`;
+  if(!fs.aid||!fs.as||!fs.at||!fc?.tid){
+    if(msgEl) msgEl.innerHTML='<div class="notice fail" style="margin-top:8px">❌ 请先在配置页填写飞书信息</div>';
     if(btn) btn.disabled=false; return;
   }
   try{
@@ -579,8 +585,7 @@ async function histSendFeishu(i){
       if(f.fs.includes('金额')||f.fs.includes('数量')||f.fs==='数量'){const n=parseFloat(String(v).replace(/[,¥$]/g,''));if(!isNaN(n))fields[f.fs]=n;}
       else fields[f.fs]=String(v);
     }});
-    // ← 使用 OCR Worker 端点
-    const r=await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:fs.aid,appSecret:fs.as,appToken:fc.at,tableId:fc.tid,fields})});
+    const r=await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:fs.aid,appSecret:fs.as,appToken:fs.at,tableId:fc.tid,fields})});
     const cr=await r.json();
     if(cr.code===0){
       const rid=cr.data?.record?.record_id;
@@ -624,7 +629,7 @@ function render(){
 }
 
 /* ══════════════════════════════════════════════
-   PAGE: OVERVIEW
+   PAGE COMPONENTS
 ══════════════════════════════════════════════ */
 function pgOv(){
   const tAdv=DB.advances.reduce((s,p)=>s+N(p.amount),0);
@@ -649,9 +654,6 @@ function pgOv(){
   <div class="sec"><div class="sec-hdr"><span class="sec-title">💰 B端待收款</span><button class="sec-more" onclick="setTab('b2b')">查看全部 →</button></div><div class="card">${bH}</div></div>`;
 }
 
-/* ══════════════════════════════════════════════
-   PAGE: SCANNER 📷 — 扫描录入（完整版）
-══════════════════════════════════════════════ */
 function pgScanner(){
   const hist = getHist();
   const res = SC.result, tgt = SC.target, mp = SC.mapping;
@@ -841,9 +843,6 @@ function pickFile(f){
   } else { SC.preview=null; render(); }
 }
 
-/* ══════════════════════════════════════════════
-   PAGE: RnD
-══════════════════════════════════════════════ */
 function pgRnD(){
   const dev=DB.products.filter(p=>p.status==='研发中'||p.status==='生产中').length;
   return `<div class="phdr"><div class="pt">🔬 自有产品研发与生产</div><div class="ps">数据来自飞书「产品管理表」</div></div>
@@ -854,9 +853,6 @@ function pgRnD(){
   </table></div></div></div>`;
 }
 
-/* ══════════════════════════════════════════════
-   PAGE: US
-══════════════════════════════════════════════ */
 function pgUS(){
   const tA=DB.advances.reduce((s,p)=>s+N(p.amount),0);
   const tR=DB.advances.reduce((s,p)=>s+N(p.returned),0);
@@ -867,9 +863,6 @@ function pgUS(){
   <div class="sec"><div class="card"><div class="stabs"><button class="stab${usT==='adv'?' on':''}" onclick="usT='adv';render()">💰 垫付款明细</button><button class="stab${usT==='ship'?' on':''}" onclick="usT='ship';render()">📦 出货记录</button></div><div>${usT==='adv'?advH:shipH}</div></div></div>`;
 }
 
-/* ══════════════════════════════════════════════
-   PAGE: ORDERS
-══════════════════════════════════════════════ */
 function pgOrd(){
   const tot=DB.productionOrders.reduce((s,o)=>s+N(o.amount),0);
   const paid=DB.productionOrders.reduce((s,o)=>s+N(o.paidAmount),0);
@@ -883,9 +876,6 @@ function pgOrd(){
   </div>`;
 }
 
-/* ══════════════════════════════════════════════
-   PAGE: B2B
-══════════════════════════════════════════════ */
 function pgB2B(){
   const tot=DB.bOrders.reduce((s,o)=>s+N(o.amount),0);
   const paid=DB.bOrders.reduce((s,o)=>s+N(o.paidAmount),0);
@@ -897,116 +887,12 @@ function pgB2B(){
   <div class="sec"><div class="card"><div class="stabs"><button class="stab${b2T==='ord'?' on':''}" onclick="b2T='ord';render()">📋 B端订单</button><button class="stab${b2T==='inv'?' on':''}" onclick="b2T='inv';render()">🧾 开票记录</button></div><div>${b2T==='ord'?`<div class="tw"><table><thead><tr><th>订单号</th><th>类型</th><th>来源</th><th>客户</th><th>SKU/产品</th><th>描述/报告期</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bTable(DB.bOrders,'bo')}</tbody></table></div>`:invH}</div></div></div>`;
 }
 
-/* ══════════════════════════════════════════════
-   PAGE: SETTINGS
-══════════════════════════════════════════════ */
-function pgSet(){
-  const fs = cfg.fs || {};
-  const tblRows=[['产品',DB.products.length,'var(--blue)'],['生产订单',DB.productionOrders.length,'var(--orange)'],['B端订单',DB.bOrders.length,'var(--amt-total)'],['垫付',DB.advances.length,'var(--red)'],['出货',DB.shipments.length,'var(--purple)'],['开票',DB.invoices.length,'var(--green)']];
-  const FTABLES=[{key:'production',label:'📦 生产订单',tid:'tblyUdlkUkAGiJwo'},{key:'b2b',label:'🤝 B端订单',tid:'tbl1vDHZlSKGBeI7'},{key:'ship_in',label:'📥📤 出货记录（收货+发货共用）',tid:'tbl5tQRwRLchLiL8'},{key:'advance',label:'💰 垫付款',tid:'tbl7FGIDEtkZBid8'},{key:'invoice',label:'🧾 开票',tid:'tbl9EmtJeZ7enX5b'}];
-  return `
-  <div class="phdr"><div class="pt">⚙ 配置</div><div class="ps">业务数据 Worker · OCR Worker · 飞书连接</div></div>
-
-  <div class="cfg-section">
-    <div class="cfg-title">🔌 Worker 连接（分离配置）</div>
-    <div style="margin-bottom:12px">
-      <label class="fl">业务数据 Worker URL <span style="color:var(--t4);font-weight:400;text-transform:none">(读飞书数据：/api/all)</span></label>
-      <input id="ci" class="fi" value="${H(cfg.dashboardUrl)}">
-    </div>
-    <div style="margin-bottom:16px">
-      <label class="fl">OCR + Gemini Worker URL <span style="color:var(--t4);font-weight:400;text-transform:none">(AI识别：POST / | 飞书写入：POST /feishu)</span></label>
-      <input id="ci2" class="fi" value="${H(cfg.ocrUrl)}">
-    </div>
-    <button class="btn btn-primary" onclick="cfg.dashboardUrl=document.getElementById('ci').value.trim().replace(/\\/$/,'');cfg.ocrUrl=document.getElementById('ci2').value.trim().replace(/\\/$/,'');saveC();doSync()">保存配置</button>
-    <div style="margin-top:12px;font-size:13px;color:var(--t3);line-height:1.6">
-      <strong>⚠️ 两个 Worker 说明：</strong><br>
-      1. <strong>业务数据 Worker</strong> — 提供 /api/all 接口（只读飞书表）<br>
-      2. <strong>OCR Worker</strong> — 提供 POST / (Gemini识别) 和 POST /feishu (飞书写入)
-    </div>
-  </div>
-
-  <div class="cfg-section">
-    <div class="cfg-title">🔑 飞书连接（扫描写入用）</div>
-    <div style="font-size:13px;color:var(--t3);margin-bottom:14px;line-height:1.7">
-      App ID/Secret 在 <a href="https://open.feishu.cn" target="_blank" style="color:var(--blue)">open.feishu.cn</a> 创建应用后获取<br>
-      每张表的 App Token 和 Table ID 从飞书 URL 复制：<code style="background:var(--bg2);padding:1px 6px;border-radius:4px">/base/<b>[appToken]</b>?table=<b>[tableId]</b></code>
-    </div>
-    <div class="g2" style="margin-bottom:16px">
-      <div><label class="fl">App ID</label><input class="fi" value="${H(fs.aid||'')}" onchange="cfg.fs={...cfg.fs||{},aid:this.value};saveC()"></div>
-      <div><label class="fl">App Secret</label><input class="fi" type="password" value="${H(fs.as||'')}" onchange="cfg.fs={...cfg.fs||{},as:this.value};saveC()"></div>
-    </div>
-    ${FTABLES.map(t=>`
-    <div style="border-left:3px solid var(--accent);padding:10px 14px;margin-bottom:10px;border-radius:0 var(--rx) var(--rx) 0;background:var(--bg2)">
-      <div style="font-size:13px;font-weight:700;margin-bottom:8px">${t.label}</div>
-      <div class="g2">
-        <div><label class="fl">App Token</label><input class="fi fi-sm" value="${H(fs[t.key]?.at||'')}" onchange="cfg.fs={...cfg.fs||{},[t.key]:{...cfg.fs?.[t.key]||{},at:this.value}};saveC()"></div>
-        <div><label class="fl">Table ID</label><input class="fi fi-sm" value="${H(fs[t.key]?.tid||t.tid)}" onchange="cfg.fs={...cfg.fs||{},[t.key]:{...cfg.fs?.[t.key]||{},tid:this.value}};saveC()"></div>
-      </div>
-    </div>`).join('')}
-  </div>
-
-  <div class="cfg-section">
-    <div class="cfg-title">📊 数据状态</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-      ${tblRows.map(([l,v,c])=>`<div style="background:var(--bg2);border-radius:var(--rs);padding:14px 16px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:600;color:var(--t3)">${l}</div><div style="font-size:28px;font-weight:800;color:${c};margin-top:5px">${v}</div></div>`).join('')}
-    </div>
-    <div style="font-size:13px;color:var(--t4)">上次同步：${lastSync?lastSync.toLocaleString('zh-CN'):'从未'}</div>
-  </div>`;
-}
-
-/* ══════════════════════════════════════════════
-   INIT
-══════════════════════════════════════════════ */
-document.getElementById('d-date').textContent = new Date().toLocaleDateString('zh-CN', {month:'long',day:'numeric',weekday:'short'});
-if (!cfg.fs) cfg.fs = {};
-const DEFAULT_FS = {
-  production: { at: '', tid: 'tblyUdlkUkAGiJwo' },
-  b2b:        { at: '', tid: 'tbl1vDHZlSKGBeI7' },
-  ship_in:    { at: '', tid: 'tbl5tQRwRLchLiL8' },
-  advance:    { at: '', tid: 'tbl7FGIDEtkZBid8' },
-  invoice:    { at: '', tid: 'tbl9EmtJeZ7enX5b' },
-};
-Object.entries(DEFAULT_FS).forEach(([k,v])=>{ if(!cfg.fs[k]) cfg.fs[k]=v; });
-saveC();
-
-renderNav();
-render();
-doSync();
-// ═══════════════════════════════════════════════════════
-// DASHBOARD QUICK-FIX — 粘贴到 dashboard index.html 的
-// </script> 标签前面（script 最后面）
-//
-// 修复：1) 飞书配置保存问题 2) 字段名对齐飞书
-// ═══════════════════════════════════════════════════════
-
-// ── Fix 1: 配置保存函数（解决 onchange 里变量不在作用域的问题）──
-window.saveFsField = function(key, val) {
-  if (!cfg.fs) cfg.fs = {};
-  cfg.fs[key] = val;
-  saveC();
-};
-window.saveFsTid = function(tableKey, val) {
-  if (!cfg.fs) cfg.fs = {};
-  if (!cfg.fs[tableKey]) cfg.fs[tableKey] = {};
-  cfg.fs[tableKey].tid = val;
-  saveC();
-};
-
-// ── Fix 2: 覆盖 FM 字段映射，对齐飞书真实字段名 ──
-FM.production = [{f:"supplier",t:"供应商",fs:"供应商"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"payment",t:"备注",fs:"备注"},{f:"_auto",t:"来源",fs:"来源",v:"供应商下单"}];
-FM.b2b = [{f:"supplier",t:"客户名称",fs:"客户名称"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"_auto",t:"来源",fs:"来源",v:"客户下单"}];
-FM.ship_in = [{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"收货"},{f:"supplier",t:"对方名称",fs:"对方名称"},{f:"docNo",t:"关联订单号",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}];
-FM.ship_out = [{f:"date",t:"日期",fs:"日期"},{f:"_auto",t:"方向",fs:"方向",v:"发货"},{f:"supplier",t:"对方名称",fs:"对方名称"},{f:"docNo",t:"关联订单号",fs:"关联订单号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"delivery",t:"物流单号",fs:"物流单号"},{f:"notes",t:"备注",fs:"备注"}];
-FM.advance = [{f:"date",t:"日期",fs:"日期"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"垫付金额",fs:"垫付金额"},{f:"notes",t:"用途说明",fs:"用途说明"},{f:"_auto",t:"还款状态",fs:"还款状态",v:"未还"},{f:"supplier",t:"备注",fs:"备注"}];
-FM.invoice = [{f:"docNo",t:"发票号",fs:"发票号"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"开票金额",fs:"开票金额"},{f:"supplier",t:"客户名称",fs:"客户名称"},{f:"_auto",t:"开票状态",fs:"开票状态",v:"已开票"},{f:"date",t:"备注",fs:"备注"}];
-
-// ── Fix 3: 覆盖 pgSet 配置页，App Token 改为全局 ──
-const _origPgSet = pgSet;
-pgSet = function() {
+// ── 已修复：配置页渲染函数 (不再被转义符干扰) ──
+function pgSet() {
   const fs = cfg.fs || {};
   const tblRows=[['产品',DB.products.length,'var(--blue)'],['生产订单',DB.productionOrders.length,'var(--orange)'],['B端订单',DB.bOrders.length,'var(--amt-total)'],['垫付',DB.advances.length,'var(--red)'],['出货',DB.shipments.length,'var(--purple)'],['开票',DB.invoices.length,'var(--green)']];
 
-  return `
+  let html = `
   <div class="phdr"><div class="pt">⚙ 配置</div><div class="ps">业务数据 Worker · OCR Worker · 飞书连接</div></div>
 
   <div class="cfg-section">
@@ -1034,117 +920,56 @@ pgSet = function() {
     <div style="margin-bottom:16px">
       <label class="fl">App Token（所有表共用）</label>
       <input class="fi" value="${H(fs.at||'')}" onchange="saveFsField('at',this.value)" placeholder="从飞书URL /base/xxx 复制">
-    </div>
-    ${[
-      {key:'production',label:'📦 生产订单',c:'var(--blue)',tid:'tblyUdlkUkAGiJwo'},
-      {key:'b2b',label:'🤝 B端订单',c:'var(--green)',tid:'tbl1vDHZlSKGBeI7'},
-      {key:'ship_in',label:'📥📤 出货记录（共用）',c:'var(--orange)',tid:'tbl5tQRwRLchLiL8'},
-      {key:'advance',label:'💰 垫付款',c:'var(--purple)',tid:'tbl7FGIDEtkZBid8'},
-      {key:'invoice',label:'🧾 开票',c:'var(--red)',tid:'tbl9EmtJeZ7enX5b'},
-    ].map(t=>\`
-    <div style="border-left:3px solid \${t.c};padding:10px 14px;margin-bottom:10px;border-radius:0 var(--rx) var(--rx) 0;background:var(--bg2)">
-      <div style="font-size:13px;font-weight:700;margin-bottom:6px">\${t.label}</div>
-      <label class="fl">Table ID</label>
-      <input class="fi fi-sm" value="\${H(fs[t.key]?.tid||t.tid)}" onchange="saveFsTid('\${t.key}',this.value)">
-    </div>\`).join('')}
-  </div>
+    </div>`;
 
+  const tablesInfo = [
+    {key:'production',label:'📦 生产订单',c:'var(--blue)',tid:'tblyUdlkUkAGiJwo'},
+    {key:'b2b',label:'🤝 B端订单',c:'var(--green)',tid:'tbl1vDHZlSKGBeI7'},
+    {key:'ship_in',label:'📥📤 出货记录（共用）',c:'var(--orange)',tid:'tbl5tQRwRLchLiL8'},
+    {key:'advance',label:'💰 垫付款',c:'var(--purple)',tid:'tbl7FGIDEtkZBid8'},
+    {key:'invoice',label:'🧾 开票',c:'var(--red)',tid:'tbl9EmtJeZ7enX5b'},
+  ];
+
+  tablesInfo.forEach(t => {
+    html += `
+    <div style="border-left:3px solid ${t.c};padding:10px 14px;margin-bottom:10px;border-radius:0 var(--rx) var(--rx) 0;background:var(--bg2)">
+      <div style="font-size:13px;font-weight:700;margin-bottom:6px">${t.label}</div>
+      <label class="fl">Table ID</label>
+      <input class="fi fi-sm" value="${H(fs[t.key]?.tid||t.tid)}" onchange="saveFsTid('${t.key}',this.value)">
+    </div>`;
+  });
+
+  html += `
+  </div>
   <div class="cfg-section">
     <div class="cfg-title">📊 数据状态</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-      ${tblRows.map(([l,v,c])=>\`<div style="background:var(--bg2);border-radius:var(--rs);padding:14px 16px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:600;color:var(--t3)">\${l}</div><div style="font-size:28px;font-weight:800;color:\${c};margin-top:5px">\${v}</div></div>\`).join('')}
+      ${tblRows.map(([l,v,c])=>`<div style="background:var(--bg2);border-radius:var(--rs);padding:14px 16px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:600;color:var(--t3)">${l}</div><div style="font-size:28px;font-weight:800;color:${c};margin-top:5px">${v}</div></div>`).join('')}
     </div>
     <div style="font-size:13px;color:var(--t4)">上次同步：${lastSync?lastSync.toLocaleString('zh-CN'):'从未'}</div>
   </div>`;
-};
 
-// ── Fix 4: 覆盖 runSaveToFeishu，使用全局 at ──
-const _origSave = runSaveToFeishu;
-runSaveToFeishu = async function() {
-  const key = SC.target, mp = SC.mapping;
-  if (!key || !mp) return;
-  const ck = cfgKey(key);
-  const fs = cfg.fs || {};
-  const aid = fs.aid, as = fs.as, at = fs.at;
-  const fc = fs[ck];
-  if (!aid || !as || !at || !fc?.tid) {
-    SC.msg = { fail: '请先在「⚙ 配置」页完成飞书连接配置' }; render(); return;
-  }
-  SC.saving = true; SC.msg = null; render();
-  try {
-    const res = SC.result;
-    const hasItems = res?.items?.length > 1 && (key==='production' || key==='b2b');
-    let cr;
-    if (hasItems) {
-      const records = res.items.map(it => {
-        const row = { ...mp };
-        row['产品名称'] = it.item||it.name||it.sku||'';
-        row['数量'] = it.qty||'';
-        row['订单金额'] = it.subtotal||it.amount||'';
-        return buildFields(key, row);
-      });
-      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,records}) });
-      cr = await r.json();
-      if (cr.code===0) {
-        SC.msg = { ok: `${cr.data?.success_count||records.length} 行写入成功 ✓` };
-        const h = getHist(); saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:`batch-${cr.data?.success_count}`},...h]);
-        doSync();
-      } else SC.msg = { fail: (cr.msg||'写入失败')+(cr.debug_fields?'\n飞书字段: '+cr.debug_fields.join(', '):'') };
-    } else {
-      const fields = buildFields(key, mp);
-      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,fields}) });
-      cr = await r.json();
-      if (cr.code===0) {
-        const rid = cr.data?.record?.record_id;
-        SC.msg = { ok: `写入成功 · Record: ${rid}` };
-        const h = getHist(); saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid},...h]);
-        doSync();
-      } else SC.msg = { fail: (cr.msg||'写入失败')+(cr.debug_fields?'\n飞书字段: '+cr.debug_fields.join(', '):'') };
-    }
-  } catch(e) { SC.msg = { fail: e.message }; }
-  SC.saving = false; render();
-};
+  return html;
+}
 
-// ── Fix 5: 覆盖 histSendFeishu，使用全局 at ──
-const _origHistSend = histSendFeishu;
-histSendFeishu = async function(i) {
-  const h=getHist(); const x=h[i]; if(!x) return;
-  const btn=document.getElementById('hbtn-'+i);
-  const msgEl=document.getElementById('hmsg-'+i);
-  if(btn) btn.disabled=true;
-  if(msgEl) msgEl.innerHTML='<div class="notice warn" style="margin-top:8px">⏳ 发送中...</div>';
-  const ck=x.t==='ship_out'?'ship_in':x.t;
-  const fs=cfg.fs||{};
-  const fc=fs[ck];
-  if(!fs.aid||!fs.as||!fs.at||!fc?.tid){
-    if(msgEl) msgEl.innerHTML='<div class="notice fail" style="margin-top:8px">❌ 请先在配置页填写飞书信息</div>';
-    if(btn) btn.disabled=false; return;
-  }
-  try{
-    const fields={};
-    FM[x.t].forEach(f=>{ const v=x.f?.[f.t]; if(v!==undefined&&v!==''){
-      if(f.fs.includes('金额')||f.fs.includes('数量')||f.fs==='数量'){const n=parseFloat(String(v).replace(/[,¥$]/g,''));if(!isNaN(n))fields[f.fs]=n;}
-      else fields[f.fs]=String(v);
-    }});
-    const r=await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:fs.aid,appSecret:fs.as,appToken:fs.at,tableId:fc.tid,fields})});
-    const cr=await r.json();
-    if(cr.code===0){
-      const rid=cr.data?.record?.record_id;
-      h[i]={...h[i],rid}; saveHist(h);
-      if(msgEl) msgEl.innerHTML=`<div class="notice ok" style="margin-top:8px">✅ 已写入飞书 · ${rid||''}</div>`;
-      doSync();
-    } else {
-      if(msgEl) msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(cr.msg||'写入失败')}</div>`;
-    }
-  }catch(e){
-    if(msgEl) msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(e.message)}</div>`;
-  }
-  if(btn) btn.disabled=false;
+/* ══════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════ */
+document.getElementById('d-date').textContent = new Date().toLocaleDateString('zh-CN', {month:'long',day:'numeric',weekday:'short'});
+if (!cfg.fs) cfg.fs = {};
+const DEFAULT_FS = {
+  production: { tid: 'tblyUdlkUkAGiJwo' },
+  b2b:        { tid: 'tbl1vDHZlSKGBeI7' },
+  ship_in:    { tid: 'tbl5tQRwRLchLiL8' },
+  advance:    { tid: 'tbl7FGIDEtkZBid8' },
+  invoice:    { tid: 'tbl9EmtJeZ7enX5b' },
 };
+Object.entries(DEFAULT_FS).forEach(([k,v])=>{ if(!cfg.fs[k]) cfg.fs[k]=v; });
+saveC();
 
-// 重新渲染让修复生效
+renderNav();
 render();
-console.log('✅ Dashboard patches applied: FM fields, global App Token, config save');
+doSync();
 </script>
 </body>
 </html>
