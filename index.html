@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>业务看板</title>
+<title>N7R 业务看板</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -212,8 +212,8 @@ tbody tr:hover td{background:rgba(0,0,0,.015)}
 
 <header>
   <div class="logo">
-    <div class="logo-chip">B2B</div>
-    <span class="logo-title">业务看板</span>
+    <div class="logo-chip">N7R</div>
+    <span class="logo-title">N7R 业务看板</span>
     <div class="logo-sep"></div>
     <span class="logo-sub">飞书实时同步</span>
   </div>
@@ -229,37 +229,28 @@ tbody tr:hover td{background:rgba(0,0,0,.015)}
 <main id="pg"></main>
 
 <script>
+<script>
 /* ══════════════════════════════════════════════
    CONFIG & STORAGE
 ══════════════════════════════════════════════ */
-const CK = 'n7r-cfg-v6';
+const CK = 'n7r-cfg-v7';
 let cfg = {
-  dashboardUrl: 'https://ocr-tool.zhenita.workers.dev', 
-  ocrUrl:       'https://ocr-tool.zhenita.workers.dev',
+  dashboardUrl: 'https://ocr-tool.zhenita.workers.dev',
+  ocrUrl: 'https://ocr-tool.zhenita.workers.dev',
+  fs: {}
 };
-try {
-  const s = localStorage.getItem(CK);
-  if (s) cfg = { ...cfg, ...JSON.parse(s) };
-} catch(e) {}
+try { const s = localStorage.getItem(CK); if (s) cfg = { ...cfg, ...JSON.parse(s) }; } catch(e) {}
+if (!cfg.fs) cfg.fs = {};
 const saveC = () => localStorage.setItem(CK, JSON.stringify(cfg));
 const du = p => cfg.dashboardUrl.replace(/\/$/, '') + p;
 const ou = p => cfg.ocrUrl.replace(/\/$/, '') + p;
-
 const getHist = () => { try { return JSON.parse(localStorage.getItem('n7r-hist')) || []; } catch { return []; } };
 const saveHist = h => { try { localStorage.setItem('n7r-hist', JSON.stringify(h.slice(0, 50))); } catch {} };
 
-// ── 全局配置保存函数 ──
-window.saveFsField = function(key, val) {
-  if (!cfg.fs) cfg.fs = {};
-  cfg.fs[key] = val;
-  saveC();
-};
-window.saveFsTid = function(tableKey, val) {
-  if (!cfg.fs) cfg.fs = {};
-  if (!cfg.fs[tableKey]) cfg.fs[tableKey] = {};
-  cfg.fs[tableKey].tid = val;
-  saveC();
-};
+// Config save helpers (safe, no stale closure)
+function saveFsField(key, val) { cfg.fs[key] = val; saveC(); }
+function saveFsTid(tableKey, val) { if (!cfg.fs[tableKey]) cfg.fs[tableKey] = {}; cfg.fs[tableKey].tid = val; saveC(); }
+function saveCfgField(key, val) { cfg[key] = val; saveC(); }
 
 /* ══════════════════════════════════════════════
    DATA
@@ -270,11 +261,8 @@ let lastSync = null, syncing = false;
 async function doSync() {
   if (syncing) return;
   syncing = true;
-  const btn = document.getElementById('sbtn');
-  const dot = document.getElementById('sdot');
-  btn.classList.add('loading');
-  dot.className = 'dot spin';
-  clearErr();
+  const btn = document.getElementById('sbtn'), dot = document.getElementById('sdot');
+  btn.classList.add('loading'); dot.className = 'dot spin'; clearErr();
   try {
     const r = await fetch(du('/api/all'), { cache: 'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -283,24 +271,17 @@ async function doSync() {
     DB = { ...DB, ...j.data };
     lastSync = new Date();
     document.getElementById('d-sync').textContent = '同步 ' + lastSync.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
-    dot.className = 'dot';
-    render();
-  } catch(e) {
-    showErr('同步失败: ' + e.message);
-    dot.className = 'dot err';
-  } finally {
-    syncing = false;
-    btn.classList.remove('loading');
-  }
+    dot.className = 'dot'; render();
+  } catch(e) { showErr('同步失败: ' + e.message); dot.className = 'dot err'; }
+  finally { syncing = false; btn.classList.remove('loading'); }
 }
 
 /* ══════════════════════════════════════════════
    UTILS
 ══════════════════════════════════════════════ */
-const N   = v => parseFloat(v) || 0;
-const F   = n => N(n).toLocaleString('zh-CN', { minimumFractionDigits:2, maximumFractionDigits:2 });
-const H   = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const skuOf = o => o.sku || (o.product ? String(o.product).split(/[\n,\/]/)[0].trim().slice(0,32) : '') || '-';
+const N = v => parseFloat(v) || 0;
+const F = n => N(n).toLocaleString('zh-CN', { minimumFractionDigits:2, maximumFractionDigits:2 });
+const H = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 const BM = {
   '研发中':['var(--blue)','var(--blue-bg)'],'生产中':['var(--orange)','var(--orange-bg)'],
@@ -311,23 +292,20 @@ const BM = {
   '待开票':['var(--orange)','var(--orange-bg)'],'已开票':['var(--green)','var(--green-bg)'],
   '履约中':['var(--blue)','var(--blue-bg)'],'已完结':['var(--green)','var(--green-bg)'],
   '未还':['var(--red)','var(--red-bg)'],'部分还':['var(--orange)','var(--orange-bg)'],
-  '已还清':['var(--green)','var(--green-bg)'],'Zoho':['var(--purple)','var(--purple-bg)'],
-  '手动':['var(--t3)','rgba(0,0,0,.07)'],'供应商':['var(--orange)','var(--orange-bg)'],
-  '供应商下单':['var(--orange)','var(--orange-bg)'],'客户':['var(--teal)','var(--teal-bg)'],
+  '已还清':['var(--green)','var(--green-bg)'],'供应商下单':['var(--orange)','var(--orange-bg)'],
+  '我司出单':['var(--blue)','var(--blue-bg)'],'客户下单':['var(--teal)','var(--teal-bg)'],
+  '供应商制单':['var(--orange)','var(--orange-bg)'],
   '月度报告':['var(--teal)','var(--teal-bg)'],'普通订单':['var(--t3)','rgba(0,0,0,.07)'],
   '收货':['var(--blue)','var(--blue-bg)'],'发货':['var(--green)','var(--green-bg)'],
 };
-function bdg(s) {
-  const [c,bg] = BM[s] || ['var(--t3)','rgba(0,0,0,.07)'];
-  return `<span class="badge" style="color:${c};background:${bg}">${H(s||'-')}</span>`;
-}
+function bdg(s) { const [c,bg] = BM[s] || ['var(--t3)','rgba(0,0,0,.07)']; return `<span class="badge" style="color:${c};background:${bg}">${H(s||'-')}</span>`; }
 function itag(l,c,bg){ return `<span class="itag" style="background:${bg};color:${c}">${l}</span>`; }
 function showErr(m){ let e=document.getElementById('_err'); if(!e){e=document.createElement('div');e.id='_err';e.className='err';document.getElementById('pg').prepend(e);}e.textContent=m; }
 function clearErr(){ const e=document.getElementById('_err'); if(e)e.remove(); }
 function kpi(l,v,s,c){ return `<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v" style="color:${c}">${v}</div><div class="kpi-s">${s||'&nbsp;'}</div></div>`; }
 
 /* ══════════════════════════════════════════════
-   COLLAPSIBLE TABLES
+   COLLAPSIBLE TABLES — 修复: SKU = sku字段, 产品 = product字段
 ══════════════════════════════════════════════ */
 const OG = new Set();
 function tog(id){ OG.has(id)?OG.delete(id):OG.add(id); render(); }
@@ -347,21 +325,39 @@ function prodTable(orders, pfx) {
   return vals.map(g => {
     const id=pfx+'_'+g.k.replace(/\W/g,'_'), open=OG.has(id), multi=g.rows.length>1;
     const mr=g.rows[0], ships=shipsFor(g.k), totalQty=g.rows.reduce((s,r)=>s+N(r.qty||0),0);
+    // 汇总行: SKU = mr.sku, 产品名称 = mr.product
     const gtr=`<tr class="gr${open?' open':''}" onclick="tog('${id}')">
       <td class="nw"><span class="arr">▶</span><span class="ono">${H(g.k)}</span>${g.zoho?itag('Z','var(--purple)','var(--purple-bg)'):''}${multi?`<span style="font-size:12px;color:var(--t4);margin-left:8px">${g.rows.length}项</span>`:''}</td>
       <td>${bdg(g.src||'手动')}</td>
-      <td class="nw fw7" style="font-size:14.5px">${H(skuOf(mr))}</td>
-      <td class="wrap" style="color:var(--t3);font-size:13.5px">${H(mr.desc||'-')}</td>
+      <td class="nw fw7 cod" style="color:var(--blue)">${H(mr.sku||'-')}</td>
+      <td class="wrap" style="font-size:13.5px">${H(mr.product||'-')}</td>
       <td>${totalQty||'-'}</td>
-      <td class="amt fw8" style="color:var(--amt-total);font-size:15.5px">¥${F(g.tot)}</td>
+      <td class="amt fw8" style="color:var(--amt-total)">¥${F(g.tot)}</td>
       <td class="amt" style="color:var(--amt-paid)">¥${F(g.paid)}</td>
       <td class="amt fw7" style="color:var(--amt-due)">¥${F(g.tot-g.paid)}</td>
       <td>${bdg(g.st||'-')}</td><td>${bdg(g.pay||'-')}</td></tr>`;
     let det='';
     if(open){
-      if(multi) det+=g.rows.map(r=>`<tr class="dr"><td colspan="2"><span class="cod" style="color:var(--blue)">${H(r.sku||'-')}</span></td><td class="fw6">${H(r.product||'-')}</td><td class="wrap" style="color:var(--t3)">${H(r.desc||'-')}</td><td>${N(r.qty)||'-'}</td><td class="amt" style="color:var(--amt-total)">¥${F(r.amount)}</td><td class="amt" style="color:var(--amt-paid)">¥${F(r.paidAmount||0)}</td><td class="amt" style="color:var(--amt-due)">¥${F(N(r.amount)-N(r.paidAmount||0))}</td><td>${bdg(r.status||'-')}</td><td>${bdg(r.payStatus||'-')}</td></tr>`).join('');
-      else { const r=g.rows[0]; det+=`<tr class="dr"><td colspan="2"><span class="cod" style="color:var(--blue)">${H(r.sku||'-')}</span></td><td class="fw6">${H(r.product||'-')}</td><td class="wrap" style="color:var(--t3)">${H(r.desc||'-')}</td><td>${N(r.qty)||'-'}</td><td colspan="5" class="wrap" style="color:var(--t3)">${H(r.notes||'-')}</td></tr>`; }
-      if(ships.length){ det+=`<tr class="ship-lbl"><td colspan="10"><span style="font-size:11px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.5px">📦 出货记录</span></td></tr>`; det+=ships.map(s=>`<tr class="ship-row"><td colspan="2"><span class="cod" style="color:var(--t3)">${H(s.date||'-')}</span></td><td><span class="cod" style="color:var(--blue)">${H(s.sku||skuOf(s))}</span></td><td>${H(s.product||'-')}</td><td>${H(s.qty||'-')}</td><td colspan="2"><span class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</span></td><td>${bdg(s.direction||'-')}</td><td colspan="2" class="wrap" style="color:var(--t3)">${H(s.notes||'-')}</td></tr>`).join(''); }
+      det+=g.rows.map(r=>`<tr class="dr">
+        <td colspan="2"></td>
+        <td class="cod fw7" style="color:var(--blue)">${H(r.sku||'-')}</td>
+        <td class="wrap">${H(r.product||'-')}</td>
+        <td>${N(r.qty)||'-'}</td>
+        <td class="amt" style="color:var(--amt-total)">¥${F(r.amount)}</td>
+        <td class="amt" style="color:var(--amt-paid)">¥${F(r.paidAmount||0)}</td>
+        <td class="amt" style="color:var(--amt-due)">¥${F(N(r.amount)-N(r.paidAmount||0))}</td>
+        <td>${bdg(r.status||'-')}</td><td>${bdg(r.payStatus||'-')}</td></tr>`).join('');
+      if(ships.length){
+        det+=`<tr class="ship-lbl"><td colspan="10"><span style="font-size:11px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.5px">📦 出货记录</span></td></tr>`;
+        det+=ships.map(s=>`<tr class="ship-row">
+          <td class="cod nw">${H(s.date||'-')}</td>
+          <td>${bdg(s.direction||'-')}</td>
+          <td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td>
+          <td>${H(s.product||'-')}</td>
+          <td>${H(s.qty||'-')}</td>
+          <td colspan="2"><span class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</span></td>
+          <td colspan="3" class="wrap" style="color:var(--t3)">${H(s.notes||'-')}</td></tr>`).join('');
+      }
     }
     return gtr+det;
   }).join('');
@@ -383,24 +379,24 @@ function bTable(orders, pfx) {
     const gtr=`<tr class="gr${open?' open':''}" onclick="tog('${id}')">
       <td class="nw"><span class="arr">▶</span><span class="ono">${H(g.k)}</span>${g.ot==='月度报告'?itag('MSR','var(--teal)','var(--teal-bg)'):''}${g.zoho?itag('Z','var(--purple)','var(--purple-bg)'):''}${multi?`<span style="font-size:12px;color:var(--t4);margin-left:8px">${g.rows.length}项</span>`:''}</td>
       <td>${bdg(g.ot||'普通订单')}</td><td>${bdg(g.src||'手动')}</td>
-      <td class="nw fw6" style="font-size:14.5px">${H(g.cust||'-')}</td>
-      <td class="nw fw7" style="font-size:14.5px">${H(skuOf(mr))}</td>
-      <td class="wrap" style="color:var(--t3);font-size:13.5px">${H(mr.desc||mr.reportPeriod||'-')}</td>
-      <td class="amt fw8" style="color:var(--amt-total);font-size:15.5px">¥${F(g.tot)}</td>
+      <td class="nw fw6">${H(g.cust||'-')}</td>
+      <td class="nw cod fw7" style="color:var(--blue)">${H(mr.sku||'-')}</td>
+      <td class="wrap" style="color:var(--t3);font-size:13.5px">${H(mr.product||mr.reportPeriod||'-')}</td>
+      <td class="amt fw8" style="color:var(--amt-total)">¥${F(g.tot)}</td>
       <td class="amt" style="color:var(--amt-paid)">¥${F(g.paid)}</td>
       <td class="amt fw7" style="color:var(--amt-due)">¥${F(g.tot-g.paid)}</td>
       <td>${bdg(g.pay||'-')}</td><td>${bdg(g.inv||'-')}</td></tr>`;
     let det='';
     if(open){
-      if(multi) det+=g.rows.map(r=>`<tr class="dr"><td colspan="3"><span class="cod" style="color:var(--blue)">${H(r.sku||'-')}</span></td><td></td><td class="fw6">${H(r.product||'-')}</td><td class="wrap" style="color:var(--t3)">${H(r.desc||r.reportPeriod||'-')}</td><td class="amt" style="color:var(--amt-total)">¥${F(r.amount)}</td><td class="amt" style="color:var(--amt-paid)">¥${F(r.paidAmount||0)}</td><td class="amt" style="color:var(--amt-due)">¥${F(N(r.amount)-N(r.paidAmount||0))}</td><td>${bdg(r.payStatus||'-')}</td><td>${bdg(r.invoiceStatus||'-')}</td></tr>`).join('');
-      if(ships.length){ det+=`<tr class="ship-lbl"><td colspan="11"><span style="font-size:11px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.5px">📦 出货记录</span></td></tr>`; det+=ships.map(s=>`<tr class="ship-row"><td colspan="3"><span class="cod" style="color:var(--t3)">${H(s.date||'-')}</span></td><td></td><td><span class="cod" style="color:var(--blue)">${H(s.sku||skuOf(s))}</span></td><td>${H(s.product||'-')}</td><td colspan="2"><span class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</span></td><td>${H(s.qty||'-')}</td><td>${bdg(s.direction||'-')}</td><td class="wrap" style="color:var(--t3)">${H(s.notes||'-')}</td></tr>`).join(''); }
+      if(multi) det+=g.rows.map(r=>`<tr class="dr"><td colspan="3"></td><td></td><td class="cod fw7" style="color:var(--blue)">${H(r.sku||'-')}</td><td class="wrap">${H(r.product||'-')}</td><td class="amt" style="color:var(--amt-total)">¥${F(r.amount)}</td><td class="amt" style="color:var(--amt-paid)">¥${F(r.paidAmount||0)}</td><td class="amt" style="color:var(--amt-due)">¥${F(N(r.amount)-N(r.paidAmount||0))}</td><td>${bdg(r.payStatus||'-')}</td><td>${bdg(r.invoiceStatus||'-')}</td></tr>`).join('');
+      if(ships.length){ det+=`<tr class="ship-lbl"><td colspan="11"><span style="font-size:11px;font-weight:700;color:var(--t4)">📦 出货记录</span></td></tr>`; det+=ships.map(s=>`<tr class="ship-row"><td class="cod nw">${H(s.date||'-')}</td><td>${bdg(s.direction||'-')}</td><td></td><td></td><td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td><td>${H(s.product||'-')}</td><td colspan="2"><span class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</span></td><td>${H(s.qty||'-')}</td><td colspan="2" class="wrap" style="color:var(--t3)">${H(s.notes||'-')}</td></tr>`).join(''); }
     }
     return gtr+det;
   }).join('');
 }
 
 /* ══════════════════════════════════════════════
-   OCR / SCANNER ENGINE (已应用映射修正)
+   OCR / SCANNER — 字段映射对齐飞书
 ══════════════════════════════════════════════ */
 const FM = {
   production:[{f:"supplier",t:"供应商",fs:"供应商"},{f:"date",t:"日期",fs:"下单日期"},{f:"docNo",t:"订单编号",fs:"订单编号"},{f:"items",t:"产品名称",fs:"产品名称"},{f:"totalQty",t:"数量",fs:"数量"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"订单金额",fs:"订单金额"},{f:"payment",t:"备注",fs:"备注"},{f:"_auto",t:"来源",fs:"来源",v:"供应商下单"}],
@@ -410,27 +406,19 @@ const FM = {
   advance:[{f:"date",t:"日期",fs:"日期"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"垫付金额",fs:"垫付金额"},{f:"notes",t:"用途说明",fs:"用途说明"},{f:"_auto",t:"还款状态",fs:"还款状态",v:"未还"},{f:"supplier",t:"备注",fs:"备注"}],
   invoice:[{f:"docNo",t:"发票号",fs:"发票号"},{f:"currency",t:"币种",fs:"币种"},{f:"total",t:"开票金额",fs:"开票金额"},{f:"supplier",t:"客户名称",fs:"客户名称"},{f:"_auto",t:"开票状态",fs:"开票状态",v:"已开票"},{f:"date",t:"备注",fs:"备注"}],
 };
-
 const SCAN_TABLES = [
-  {key:"production", icon:"📦", label:"生产订单", desc:"采购单/报价单", c:"var(--blue)"},
-  {key:"b2b",        icon:"🤝", label:"B端订单",  desc:"客户订单/合同", c:"var(--green)"},
-  {key:"ship_in",    icon:"📥", label:"收货记录",  desc:"供应商来货",   c:"var(--orange)"},
-  {key:"ship_out",   icon:"📤", label:"发货记录",  desc:"发给客户",     c:"var(--pink)"},
-  {key:"advance",    icon:"💰", label:"垫付款",    desc:"付款凭证",     c:"var(--purple)"},
-  {key:"invoice",    icon:"🧾", label:"开票",      desc:"发票",         c:"var(--red)"},
+  {key:"production",icon:"📦",label:"生产订单",desc:"采购单/报价单",c:"var(--blue)"},
+  {key:"b2b",icon:"🤝",label:"B端订单",desc:"客户订单/合同",c:"var(--green)"},
+  {key:"ship_in",icon:"📥",label:"收货记录",desc:"供应商来货",c:"var(--orange)"},
+  {key:"ship_out",icon:"📤",label:"发货记录",desc:"发给客户",c:"var(--pink)"},
+  {key:"advance",icon:"💰",label:"垫付款",desc:"付款凭证",c:"var(--purple)"},
+  {key:"invoice",icon:"🧾",label:"开票",desc:"发票",c:"var(--red)"},
 ];
-
-let SC = {
-  file: null, preview: null, busy: false,
-  result: null, target: null, mapping: null, saving: false, msg: null,
-  drag: false,
-};
-
+let SC = { file:null, preview:null, busy:false, result:null, target:null, mapping:null, saving:false, msg:null, drag:false };
 const cfgKey = k => k==='ship_out' ? 'ship_in' : k;
 
 function doMap(key, data) {
-  data = data || SC.result;
-  SC.target = key;
+  data = data || SC.result; SC.target = key;
   if (!data || data.error) { SC.mapping = null; return; }
   const m = {};
   FM[key].forEach(f => {
@@ -443,533 +431,199 @@ function doMap(key, data) {
   });
   SC.mapping = m;
 }
-
 function autoDetect(d) {
   if (!d || d.error) return;
   const t = JSON.stringify(d).toLowerCase();
   if (t.includes('送货单')||t.includes('delivery note')||t.includes('发货单')||t.includes('出货单')||t.includes('packing list')) return doMap('ship_out', d);
-  if (t.includes('收货')||t.includes('入库')||t.includes('到货')||t.includes('goods received')) return doMap('ship_in', d);
+  if (t.includes('收货')||t.includes('入库')||t.includes('到货')) return doMap('ship_in', d);
   if ((t.includes('付款')||t.includes('转账')||t.includes('垫付')||t.includes('汇款'))&&!t.includes('付款条件')&&!t.includes('payment term')) return doMap('advance', d);
   if ((t.includes('发票')||t.includes('tax invoice')||t.includes('增值税'))&&!t.includes('proforma')) return doMap('invoice', d);
   if (t.includes('sales contract')||t.includes('销售合同')||t.includes('合同')||t.includes('order confirmation')) return doMap('b2b', d);
   if (t.includes('purchase order')||t.includes('采购')||t.includes('报价')||t.includes('quotation')) return doMap('production', d);
 }
-
 function buildFields(key, data) {
   const fields = {};
-  FM[key].forEach(f => {
-    const v = data[f.t];
-    if (v === undefined || v === '') return;
-    if (f.fs.includes('金额') || f.fs.includes('数量') || f.fs==='数量') {
-      const n = parseFloat(String(v).replace(/[,¥$]/g, ''));
-      if (!isNaN(n)) fields[f.fs] = n;
-    } else fields[f.fs] = String(v);
-  });
-  return fields;
+  FM[key].forEach(f => { const v = data[f.t]; if (v===undefined||v==='') return;
+    if (f.fs.includes('金额')||f.fs.includes('数量')||f.fs==='数量') { const n=parseFloat(String(v).replace(/[,¥$]/g,'')); if(!isNaN(n)) fields[f.fs]=n; }
+    else fields[f.fs] = String(v);
+  }); return fields;
 }
-
 async function compress(file) {
-  return new Promise(res => {
-    const cv = document.createElement('canvas'), im = new Image();
-    im.onload = () => {
-      const s = Math.min(1, 1600/im.width);
-      cv.width=im.width*s; cv.height=im.height*s;
-      cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);
-      cv.toBlob(b=>res(b), 'image/jpeg', 0.85);
-    };
-    im.src = URL.createObjectURL(file);
-  });
+  return new Promise(res => { const cv=document.createElement('canvas'),im=new Image();
+    im.onload=()=>{const s=Math.min(1,1600/im.width);cv.width=im.width*s;cv.height=im.height*s;cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);cv.toBlob(b=>res(b),'image/jpeg',0.85)};
+    im.src=URL.createObjectURL(file); });
 }
-
 async function runExtract() {
-  if (!SC.file) return;
-  SC.busy = true; SC.result = null; SC.msg = null;
-  render();
-  try {
-    const fd = new FormData();
-    const f = SC.file;
-    if (f.type.startsWith('image/') && f.size > 1e6) fd.append('file', await compress(f), f.name);
-    else fd.append('file', f);
-    
-    const r = await fetch(ou('/'), { method:'POST', body:fd });
-    const d = await r.json();
-    SC.result = d;
-    autoDetect(d);
-  } catch(e) { SC.result = { error: e.message }; }
-  SC.busy = false;
-  render();
+  if (!SC.file) return; SC.busy=true; SC.result=null; SC.msg=null; render();
+  try { const fd=new FormData(); const f=SC.file;
+    if(f.type.startsWith('image/')&&f.size>1e6) fd.append('file',await compress(f),f.name); else fd.append('file',f);
+    const r=await fetch(ou('/'),{method:'POST',body:fd}); const d=await r.json(); SC.result=d; autoDetect(d);
+  } catch(e) { SC.result={error:e.message}; } SC.busy=false; render();
 }
-
-// ── 已修复：使用全局 App Token (fs.at) ──
 async function runSaveToFeishu() {
-  const key = SC.target, mp = SC.mapping;
-  if (!key || !mp) return;
-  const ck = cfgKey(key);
-  const fs = cfg.fs || {};
-  const aid = fs.aid, as = fs.as, at = fs.at;
-  const fc = fs[ck];
-  if (!aid || !as || !at || !fc?.tid) {
-    SC.msg = { fail: '请先在「⚙ 配置」页完成飞书连接配置' }; render(); return;
-  }
-  SC.saving = true; SC.msg = null; render();
+  const key=SC.target, mp=SC.mapping; if(!key||!mp) return;
+  const ck=cfgKey(key), fs=cfg.fs||{}, aid=fs.aid, as=fs.as, at=fs.at, fc=fs[ck];
+  if(!aid||!as||!at||!fc?.tid){ SC.msg={fail:'请先在「⚙ 配置」页完成飞书连接'}; render(); return; }
+  SC.saving=true; SC.msg=null; render();
   try {
-    const res = SC.result;
-    const hasItems = res?.items?.length > 1 && (key==='production' || key==='b2b');
-    let cr;
-    if (hasItems) {
-      const records = res.items.map(it => {
-        const row = { ...mp };
-        row['产品名称'] = it.item||it.name||it.sku||'';
-        row['数量'] = it.qty||'';
-        row['订单金额'] = it.subtotal||it.amount||'';
-        return buildFields(key, row);
-      });
-      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,records}) });
-      cr = await r.json();
-      if (cr.code===0) {
-        SC.msg = { ok: `${cr.data?.success_count||records.length} 行写入成功 ✓` };
-        const h = getHist(); saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:`batch-${cr.data?.success_count}`},...h]);
-        doSync();
-      } else SC.msg = { fail: (cr.msg||'写入失败')+(cr.debug_fields?'\n飞书字段: '+cr.debug_fields.join(', '):'') };
+    const res=SC.result, hasItems=res?.items?.length>1&&(key==='production'||key==='b2b');
+    if(hasItems){
+      const records=res.items.map(it=>{const row={...mp};row['产品名称']=it.item||it.name||it.sku||'';row['数量']=it.qty||'';row['订单金额']=it.subtotal||it.amount||'';return buildFields(key,row)});
+      const cr=await(await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,records})})).json();
+      if(cr.code===0){SC.msg={ok:`${cr.data?.success_count||records.length}行写入成功`};saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:`batch`},...getHist()]);doSync();}
+      else SC.msg={fail:(cr.msg||'失败')+(cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):'')};
     } else {
-      const fields = buildFields(key, mp);
-      const r = await fetch(ou('/feishu'), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,fields}) });
-      cr = await r.json();
-      if (cr.code===0) {
-        const rid = cr.data?.record?.record_id;
-        SC.msg = { ok: `写入成功 · Record: ${rid}` };
-        const h = getHist(); saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid},...h]);
-        doSync();
-      } else SC.msg = { fail: (cr.msg||'写入失败')+(cr.debug_fields?'\n飞书字段: '+cr.debug_fields.join(', '):'') };
+      const fields=buildFields(key,mp);
+      const cr=await(await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,fields})})).json();
+      if(cr.code===0){SC.msg={ok:'写入成功 · '+cr.data?.record?.record_id};saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:cr.data?.record?.record_id},...getHist()]);doSync();}
+      else SC.msg={fail:(cr.msg||'失败')+(cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):'')};
     }
-  } catch(e) { SC.msg = { fail: e.message }; }
-  SC.saving = false; render();
+  } catch(e){SC.msg={fail:e.message}} SC.saving=false; render();
 }
 
 /* ══════════════════════════════════════════════
-   HISTORY HELPERS
+   HISTORY
 ══════════════════════════════════════════════ */
 const HIST_OPEN = new Set();
 function togHist(i){ HIST_OPEN.has(i)?HIST_OPEN.delete(i):HIST_OPEN.add(i); render(); }
-
-function histCopy(i){
-  const x=getHist()[i]; if(!x) return;
-  const l=[];
-  Object.entries(x.f||{}).forEach(([k,v])=>{ if(v) l.push(`${k}: ${v}`); });
-  if(x.r?.items?.length){ l.push('\n行项目:'); x.r.items.forEach((it,j)=>l.push(`${j+1}. ${it.item||'-'} ×${it.qty||'-'} @${it.unitPrice||'-'} =${it.subtotal||'-'}`)); }
-  navigator.clipboard.writeText(l.join('\n'));
-}
-
-function histDel(i){
-  if(!confirm('删除这条记录？')) return;
-  const h=getHist(); h.splice(i,1); saveHist(h); HIST_OPEN.delete(i); render();
-}
-
-// ── 已修复：使用全局 App Token (fs.at) ──
-async function histSendFeishu(i) {
+function histCopy(i){ const x=getHist()[i]; if(!x) return; const l=[]; Object.entries(x.f||{}).forEach(([k,v])=>{if(v)l.push(`${k}: ${v}`)}); navigator.clipboard.writeText(l.join('\n')); }
+function histDel(i){ if(!confirm('删除？')) return; const h=getHist(); h.splice(i,1); saveHist(h); render(); }
+async function histSendFeishu(i){
   const h=getHist(); const x=h[i]; if(!x) return;
-  const btn=document.getElementById('hbtn-'+i);
-  const msgEl=document.getElementById('hmsg-'+i);
-  if(btn) btn.disabled=true;
-  if(msgEl) msgEl.innerHTML='<div class="notice warn" style="margin-top:8px">⏳ 发送中...</div>';
-  const ck=x.t==='ship_out'?'ship_in':x.t;
-  const fs=cfg.fs||{};
-  const fc=fs[ck];
-  if(!fs.aid||!fs.as||!fs.at||!fc?.tid){
-    if(msgEl) msgEl.innerHTML='<div class="notice fail" style="margin-top:8px">❌ 请先在配置页填写飞书信息</div>';
-    if(btn) btn.disabled=false; return;
-  }
+  const btn=document.getElementById('hbtn-'+i), msgEl=document.getElementById('hmsg-'+i);
+  if(btn)btn.disabled=true; if(msgEl)msgEl.innerHTML='<div class="notice warn" style="margin-top:8px">⏳ 发送中...</div>';
+  const ck=x.t==='ship_out'?'ship_in':x.t, fs=cfg.fs||{}, fc=fs[ck];
+  if(!fs.aid||!fs.as||!fs.at||!fc?.tid){ if(msgEl)msgEl.innerHTML='<div class="notice fail" style="margin-top:8px">❌ 请先配置飞书</div>'; if(btn)btn.disabled=false; return; }
   try{
-    const fields={};
-    FM[x.t].forEach(f=>{ const v=x.f?.[f.t]; if(v!==undefined&&v!==''){
-      if(f.fs.includes('金额')||f.fs.includes('数量')||f.fs==='数量'){const n=parseFloat(String(v).replace(/[,¥$]/g,''));if(!isNaN(n))fields[f.fs]=n;}
-      else fields[f.fs]=String(v);
-    }});
-    const r=await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:fs.aid,appSecret:fs.as,appToken:fs.at,tableId:fc.tid,fields})});
-    const cr=await r.json();
-    if(cr.code===0){
-      const rid=cr.data?.record?.record_id;
-      h[i]={...h[i],rid}; saveHist(h);
-      if(msgEl) msgEl.innerHTML=`<div class="notice ok" style="margin-top:8px">✅ 已写入飞书 · ${rid||''}</div>`;
-      doSync();
-    } else {
-      if(msgEl) msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(cr.msg||'写入失败')}</div>`;
-    }
-  }catch(e){
-    if(msgEl) msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(e.message)}</div>`;
-  }
-  if(btn) btn.disabled=false;
+    const fields={}; FM[x.t].forEach(f=>{const v=x.f?.[f.t];if(v!==undefined&&v!==''){if(f.fs.includes('金额')||f.fs.includes('数量')||f.fs==='数量'){const n=parseFloat(String(v).replace(/[,¥$]/g,''));if(!isNaN(n))fields[f.fs]=n}else fields[f.fs]=String(v)}});
+    const cr=await(await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:fs.aid,appSecret:fs.as,appToken:fs.at,tableId:fc.tid,fields})})).json();
+    if(cr.code===0){h[i]={...h[i],rid:cr.data?.record?.record_id};saveHist(h);if(msgEl)msgEl.innerHTML=`<div class="notice ok" style="margin-top:8px">✅ 已写入</div>`;doSync();}
+    else{if(msgEl)msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(cr.msg||'失败')}</div>`;}
+  }catch(e){if(msgEl)msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(e.message)}</div>`;}
+  if(btn)btn.disabled=false;
 }
 
 /* ══════════════════════════════════════════════
    ROUTING
 ══════════════════════════════════════════════ */
-const TABS = [
-  {k:'overview', l:'📊 总览'},
-  {k:'scanner',  l:'📷 扫描录入'},
-  {k:'rnd',      l:'🔬 研发生产'},
-  {k:'us',       l:'🇺🇸 美国合作'},
-  {k:'orders',   l:'📦 下单出货'},
-  {k:'b2b',      l:'🤝 B端履约'},
-  {k:'settings', l:'⚙ 配置'},
-];
+const TABS=[{k:'overview',l:'📊 总览'},{k:'scanner',l:'📷 扫描录入'},{k:'rnd',l:'🔬 研发生产'},{k:'us',l:'🇺🇸 美国合作'},{k:'orders',l:'📦 下单出货'},{k:'b2b',l:'🤝 B端履约'},{k:'settings',l:'⚙ 配置'}];
 let tab='overview', usT='adv', b2T='ord', ordF='all';
-
-function setTab(k){ tab=k; renderNav(); render(); }
-function renderNav(){
-  document.getElementById('nav').innerHTML = TABS.map(t =>
-    `<button class="${tab===t.k?'active':''}" onclick="setTab('${t.k}')">${t.l}</button>`
-  ).join('');
-}
-function render(){
-  clearErr();
-  const pages={overview:pgOv,scanner:pgScanner,rnd:pgRnD,us:pgUS,orders:pgOrd,b2b:pgB2B,settings:pgSet};
-  document.getElementById('pg').innerHTML=(pages[tab]||pgOv)();
-  if(tab==='scanner') bindScannerEvents();
-}
+function setTab(k){tab=k;renderNav();render();}
+function renderNav(){document.getElementById('nav').innerHTML=TABS.map(t=>`<button class="${tab===t.k?'active':''}" onclick="setTab('${t.k}')">${t.l}</button>`).join('');}
+function render(){clearErr();const pages={overview:pgOv,scanner:pgScanner,rnd:pgRnD,us:pgUS,orders:pgOrd,b2b:pgB2B,settings:pgSet};document.getElementById('pg').innerHTML=(pages[tab]||pgOv)();if(tab==='scanner')bindScannerEvents();}
 
 /* ══════════════════════════════════════════════
-   PAGE COMPONENTS
+   PAGE: OVERVIEW
 ══════════════════════════════════════════════ */
 function pgOv(){
-  const tAdv=DB.advances.reduce((s,p)=>s+N(p.amount),0);
-  const unret=DB.advances.filter(p=>p.status!=='已还清').reduce((s,p)=>s+(N(p.amount)-N(p.returned)),0);
-  const bTot=DB.bOrders.reduce((s,o)=>s+N(o.amount),0);
-  const bPaid=DB.bOrders.reduce((s,o)=>s+N(o.paidAmount),0);
-  const msrP=DB.bOrders.filter(o=>o.orderType==='月度报告'&&o.payStatus!=='已付款').reduce((s,o)=>s+(N(o.amount)-N(o.paidAmount)),0);
+  const tAdv=DB.advances.reduce((s,p)=>s+N(p.amount),0), unret=DB.advances.filter(p=>p.status!=='已还清').reduce((s,p)=>s+(N(p.amount)-N(p.returned)),0);
+  const bTot=DB.bOrders.reduce((s,o)=>s+N(o.amount),0), bPaid=DB.bOrders.reduce((s,o)=>s+N(o.paidAmount),0);
   const actP=DB.productionOrders.filter(o=>o.status!=='已完成'&&o.status!=='已取消');
   const bAct=DB.bOrders.filter(o=>o.status!=='已完结'&&o.status!=='已取消').length;
   const pendAdv=DB.advances.filter(p=>p.status!=='已还清');
-  const advH=pendAdv.length===0?'<div style="padding:22px;text-align:center;color:var(--t4);font-size:14px">✓ 暂无未还垫付</div>'
-    :`<div class="tw"><table><thead><tr><th>日期</th><th>用途</th><th>类型</th><th>垫付金额</th><th>已还</th><th>未还余额</th><th>状态</th><th>关联订单</th></tr></thead><tbody>${pendAdv.map(p=>`<tr><td class="cod nw">${H(p.date||'-')}</td><td class="wrap">${H(p.purpose||'-')}</td><td>${bdg(p.type||'-')}</td><td class="amt fw7" style="color:var(--red)">¥${F(p.amount)}</td><td class="amt" style="color:var(--green)">¥${F(p.returned||0)}</td><td class="amt fw8" style="color:var(--red)">¥${F(N(p.amount)-N(p.returned))}</td><td>${bdg(p.status)}</td><td class="cod nw">${H(p.relatedOrder||'-')}</td></tr>`).join('')}</tbody></table></div>`;
-  const prodH=actP.length===0?'<div style="padding:22px;text-align:center;color:var(--t4);font-size:14px">✓ 暂无进行中订单</div>'
-    :`<div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU/产品</th><th>描述</th><th>数量</th><th>总金额</th><th>已付</th><th>待付</th><th>生产状态</th><th>付款状态</th></tr></thead><tbody>${prodTable(actP,'ov')}</tbody></table></div>`;
-  const bPendR=DB.bOrders.filter(o=>o.payStatus!=='已付款').slice(0,10);
-  const bH=bPendR.length===0?'<div style="padding:22px;text-align:center;color:var(--t4);font-size:14px">✓ 暂无待收款</div>'
-    :`<div class="tw"><table><thead><tr><th>订单号</th><th>客户</th><th>SKU/产品</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bPendR.map(o=>`<tr><td class="nw"><span class="ono">${H(o.orderNo||'-')}</span>${o.orderType==='月度报告'?itag('MSR','var(--teal)','var(--teal-bg)'):''}</td><td class="nw fw6">${H(o.customer||'-')}</td><td class="nw fw7">${H(skuOf(o))}</td><td class="amt fw8" style="color:var(--amt-total);font-size:15.5px">¥${F(o.amount)}</td><td class="amt" style="color:var(--amt-paid)">¥${F(o.paidAmount||0)}</td><td class="amt fw8" style="color:var(--amt-due);font-size:15.5px">¥${F(N(o.amount)-N(o.paidAmount))}</td><td>${bdg(o.payStatus)}</td><td>${bdg(o.invoiceStatus)}</td></tr>`).join('')}</tbody></table></div>`;
   return `
-  <div class="g4">${kpi('未还垫付','¥'+F(unret),'总垫付 ¥'+F(tAdv),'var(--red)')}${kpi('B端待收款','¥'+F(bTot-bPaid),'月报待收 ¥'+F(msrP),'var(--orange)')}${kpi('进行中生产',actP.length+'','共'+DB.productionOrders.length+'条','var(--blue)')}${kpi('B端活跃',bAct+'','已收 ¥'+F(bPaid),'var(--green)')}</div>
-  <div class="sec"><div class="sec-hdr"><span class="sec-title">⚠️ 美国垫付未还</span><button class="sec-more" onclick="setTab('us')">查看全部 →</button></div><div class="card">${advH}</div></div>
-  <div class="sec"><div class="sec-hdr"><span class="sec-title">📦 进行中生产订单</span><button class="sec-more" onclick="setTab('orders')">查看全部 →</button></div><div class="card">${prodH}</div></div>
-  <div class="sec"><div class="sec-hdr"><span class="sec-title">💰 B端待收款</span><button class="sec-more" onclick="setTab('b2b')">查看全部 →</button></div><div class="card">${bH}</div></div>`;
+  <div class="g4">${kpi('未还垫付','¥'+F(unret),'总垫付 ¥'+F(tAdv),'var(--red)')}${kpi('B端待收款','¥'+F(bTot-bPaid),'','var(--orange)')}${kpi('进行中生产',actP.length+'','共'+DB.productionOrders.length+'条','var(--blue)')}${kpi('B端活跃',bAct+'','已收 ¥'+F(bPaid),'var(--green)')}</div>
+  <div class="sec"><div class="sec-hdr"><span class="sec-title">⚠️ 美国垫付未还</span><button class="sec-more" onclick="setTab('us')">查看全部 →</button></div><div class="card">${pendAdv.length===0?'<div style="padding:22px;text-align:center;color:var(--t4)">✓ 暂无</div>':'<div class="tw"><table><thead><tr><th>日期</th><th>用途</th><th>垫付金额</th><th>已还</th><th>未还</th><th>状态</th></tr></thead><tbody>'+pendAdv.map(p=>`<tr><td class="cod nw">${H(p.date||'-')}</td><td class="wrap">${H(p.purpose||'-')}</td><td class="amt fw7" style="color:var(--red)">¥${F(p.amount)}</td><td class="amt" style="color:var(--green)">¥${F(p.returned||0)}</td><td class="amt fw8" style="color:var(--red)">¥${F(N(p.amount)-N(p.returned))}</td><td>${bdg(p.status)}</td></tr>`).join('')+'</tbody></table></div>'}</div></div>
+  <div class="sec"><div class="sec-hdr"><span class="sec-title">📦 进行中生产订单</span><button class="sec-more" onclick="setTab('orders')">查看全部 →</button></div><div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU</th><th>产品名称</th><th>数量</th><th>总金额</th><th>已付</th><th>待付</th><th>状态</th><th>付款</th></tr></thead><tbody>${prodTable(actP,'ov')}</tbody></table></div></div></div>`;
 }
 
+/* PAGE: SCANNER */
 function pgScanner(){
-  const hist = getHist();
-  const res = SC.result, tgt = SC.target, mp = SC.mapping;
-
-  const dropZone = `
-  <div class="dropzone${SC.drag?' drag':''}" id="dz" onclick="document.getElementById('fi').click()">
-    <input id="fi" type="file" accept="image/*,application/pdf" style="display:none" onchange="pickFile(this.files[0])">
-    ${SC.file
-      ? `<div style="font-size:24px;margin-bottom:8px">📄</div><div style="font-size:14px;font-weight:600;color:var(--t1)">${H(SC.file.name)}</div><div style="font-size:12px;color:var(--t4);margin-top:4px">点击重新选择</div>`
-      : `<div class="dropzone-icon">📄</div><div class="dropzone-txt">点击选择、拖拽文件，或 <b>Ctrl+V</b> 粘贴截图</div><div style="font-size:12px;color:var(--t4);margin-top:6px">支持 JPG · PNG · PDF</div>`
-    }
+  const hist=getHist(), res=SC.result, tgt=SC.target, mp=SC.mapping;
+  const leftCol=`<div>
+    <div class="dropzone${SC.drag?' drag':''}" id="dz" onclick="document.getElementById('fi').click()"><input id="fi" type="file" accept="image/*,application/pdf" style="display:none" onchange="pickFile(this.files[0])">
+    ${SC.file?`<div style="font-size:24px;margin-bottom:8px">📄</div><div style="font-size:14px;font-weight:600">${H(SC.file.name)}</div><div style="font-size:12px;color:var(--t4);margin-top:4px">点击重新选择</div>`:`<div class="dropzone-icon">📄</div><div class="dropzone-txt">点击选择、拖拽或 <b>Ctrl+V</b></div>`}</div>
+    ${SC.file?`<button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="runExtract()" ${SC.busy?'disabled':''}>${SC.busy?'⏳ 识别中...':'✨ 开始识别'}</button>`:''}
+    ${SC.preview?`<div class="scan-preview" style="margin-top:12px"><img src="${SC.preview}"></div>`:''}
+    ${res&&!res.error&&res.header?`<div class="card" style="margin-top:16px"><div style="padding:14px 16px 10px;font-weight:700;border-bottom:1px solid var(--border2)">📋 识别结果 <span class="badge" style="background:var(--green-bg);color:var(--green)">✓</span></div><div style="padding:12px 16px"><div class="result-grid">${Object.entries(res.header).filter(([,v])=>v).map(([k,v])=>`<div class="result-cell"><div class="result-cell-k">${H(k)}</div><div class="result-cell-v">${H(String(v))}</div></div>`).join('')}</div>${res.items?.length?`<div style="margin-top:12px"><div class="tw"><table style="font-size:13px"><thead><tr><th>产品</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>${res.items.map(it=>`<tr><td class="fw6">${H(it.item||it.name||'-')}</td><td>${it.qty||'-'}</td><td>${it.unitPrice||it.price||'-'}</td><td class="amt" style="color:var(--amt-total)">${it.subtotal||it.amount||'-'}</td></tr>`).join('')}</tbody></table></div></div>`:''}</div></div>`:''}
+    ${res?.error?`<div class="notice fail" style="margin-top:12px">❌ ${H(res.error)}</div>`:''}
   </div>`;
-
-  const leftCol = `
-  <div>
-    ${dropZone}
-    ${SC.file ? `<button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="runExtract()" ${SC.busy?'disabled':''}>
-      ${SC.busy?'<span style="opacity:.7">⏳ AI 识别中...</span>':'✨ 开始识别'}
-    </button>` : ''}
-    ${SC.preview ? `<div class="scan-preview" style="margin-top:12px"><img src="${SC.preview}" alt="preview"></div>` : ''}
-    ${res && !res.error && res.header ? `
-    <div class="card" style="margin-top:16px">
-      <div style="padding:14px 16px 10px;font-size:14px;font-weight:700;border-bottom:1px solid var(--border2)">📋 识别结果 <span class="badge" style="background:var(--green-bg);color:var(--green);margin-left:6px">✓</span></div>
-      <div style="padding:12px 16px">
-        <div class="result-grid">
-          ${Object.entries(res.header).filter(([,v])=>v).map(([k,v])=>`<div class="result-cell"><div class="result-cell-k">${H(k)}</div><div class="result-cell-v">${H(String(v))}</div></div>`).join('')}
-        </div>
-        ${res.items?.length ? `
-        <div style="margin-top:12px;font-size:12px;font-weight:700;color:var(--t3);margin-bottom:6px">行项目 (${res.items.length})</div>
-        <div class="tw"><table style="font-size:13px">
-          <thead><tr><th>产品</th><th>数量</th><th>单价</th><th>小计</th></tr></thead>
-          <tbody>${res.items.map(it=>`<tr><td class="fw6">${H(it.item||it.name||'-')}</td><td>${H(String(it.qty||'-'))}</td><td>${H(String(it.unitPrice||it.price||'-'))}</td><td class="amt" style="color:var(--amt-total)">${H(String(it.subtotal||it.amount||'-'))}</td></tr>`).join('')}</tbody>
-        </table></div>` : ''}
-      </div>
-    </div>` : ''}
-    ${res?.error ? `<div class="notice fail" style="margin-top:12px">❌ ${H(res.error)}</div>` : ''}
+  const rightCol=`<div>
+    ${res&&!res.error?`<div class="card" style="margin-bottom:16px"><div style="padding:14px 16px 10px;font-weight:700;border-bottom:1px solid var(--border2)">🎯 写入目标 ${tgt?'<span style="font-size:12px;color:var(--green);font-weight:400;margin-left:8px">已识别</span>':'<span style="font-size:12px;color:var(--orange);font-weight:400;margin-left:8px">请选择</span>'}</div><div style="padding:12px 16px"><div class="tgt-grid">${SCAN_TABLES.map(t=>`<div class="tgt-btn${tgt===t.key?' sel':''}" onclick="doMap('${t.key}');render()" style="${tgt===t.key?'border-color:'+t.c:''}"><div class="tgt-icon">${t.icon}</div><div class="tgt-label" style="color:${t.c}">${t.label}</div><div class="tgt-desc">${t.desc}</div></div>`).join('')}</div></div></div>`:`<div style="text-align:center;padding:40px;color:var(--t4)"><div style="font-size:48px;margin-bottom:12px">👈</div><div>上传后显示映射选项</div></div>`}
+    ${tgt&&mp?`<div class="card"><div style="padding:14px 16px 10px;font-weight:700;border-bottom:1px solid var(--border2)">🔗 字段映射</div><div style="padding:14px 16px">${Object.entries(mp).map(([k,v])=>`<div class="map-row"><div class="map-key">${H(k)}</div><input class="fi fi-sm" value="${H(String(v))}" onchange="SC.mapping['${k}']=this.value"></div>`).join('')}<div style="display:flex;gap:10px;margin-top:16px"><button class="btn btn-primary" style="flex:1" onclick="runSaveToFeishu()" ${SC.saving?'disabled':''}>${SC.saving?'⏳':'🪁 写入飞书'}</button><button class="btn btn-ghost" onclick="SC.msg=null;saveHist([{d:new Date().toISOString(),t:SC.target,f:SC.mapping,r:SC.result},...getHist()]);SC.msg={ok:'已保存'};render()">💾 保存</button></div>${SC.msg?`<div class="notice ${SC.msg.ok?'ok':'fail'}" style="margin-top:10px">${SC.msg.ok||('❌ '+SC.msg.fail)}</div>`:''}</div></div>`:''}
   </div>`;
-
-  const rightCol = `
-  <div>
-    ${res && !res.error ? `
-    <div class="card" style="margin-bottom:16px">
-      <div style="padding:14px 16px 10px;font-size:14px;font-weight:700;border-bottom:1px solid var(--border2)">
-        🎯 写入目标
-        ${tgt ? `<span style="font-size:12px;color:var(--green);font-weight:400;margin-left:8px">已自动识别</span>` : `<span style="font-size:12px;color:var(--orange);font-weight:400;margin-left:8px">请选择</span>`}
-      </div>
-      <div style="padding:12px 16px">
-        <div class="tgt-grid">
-          ${SCAN_TABLES.map(t=>`
-          <div class="tgt-btn${tgt===t.key?' sel':''}" onclick="doMap('${t.key}');render()" style="${tgt===t.key?`border-color:${t.c};background:${t.c}10`:``}">
-            <div class="tgt-icon">${t.icon}</div>
-            <div class="tgt-label" style="color:${t.c}">${t.label}</div>
-            <div class="tgt-desc">${t.desc}</div>
-          </div>`).join('')}
-        </div>
-      </div>
-    </div>
-    ` : `
-    <div style="text-align:center;padding:40px 20px;color:var(--t4)">
-      <div style="font-size:48px;margin-bottom:12px">👈</div>
-      <div style="font-size:14px">上传单据后这里会显示<br>字段映射和写入选项</div>
-    </div>`}
-
-    ${tgt && mp ? `
-    <div class="card">
-      <div style="padding:14px 16px 10px;font-size:14px;font-weight:700;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between">
-        <span>🔗 字段映射</span>
-      </div>
-      <div style="padding:14px 16px">
-        ${Object.entries(mp).map(([k,v])=>`
-        <div class="map-row">
-          <div class="map-key">${H(k)}</div>
-          <input class="fi fi-sm" value="${H(String(v))}" onchange="SC.mapping['${k}']=this.value">
-        </div>`).join('')}
-        <div style="display:flex;gap:10px;margin-top:16px">
-          <button class="btn btn-primary" style="flex:1" onclick="runSaveToFeishu()" ${SC.saving?'disabled':''}>
-            ${SC.saving?'⏳ 写入中...':'🪁 写入飞书'}
-          </button>
-          <button class="btn btn-ghost" onclick="SC.msg=null;const h=getHist();saveHist([{d:new Date().toISOString(),t:SC.target,f:SC.mapping,r:SC.result},...h]);SC.msg={ok:'已保存到本地历史'};render()">💾 仅保存</button>
-        </div>
-        ${SC.msg ? `<div class="notice ${SC.msg.ok?'ok':'fail'}" style="margin-top:10px">${SC.msg.ok||('❌ '+SC.msg.fail)}</div>` : ''}
-      </div>
-    </div>` : ''}
-  </div>`;
-
-  const histSection = hist.length===0 ? '' : `
-  <div class="sec">
-    <div class="sec-hdr">
-      <span class="sec-title">🗂 录入历史 <span style="font-size:14px;font-weight:400;color:var(--t4)">${hist.length} 条</span></span>
-      <button class="btn-sm btn-danger" onclick="if(confirm('清空全部历史？')){saveHist([]);render()}">清空</button>
-    </div>
-    ${hist.map((x,i)=>{
-      const tbl = SCAN_TABLES.find(t=>t.key===x.t);
-      const synced = x.rid && x.rid!=='本地';
-      const isOpen = HIST_OPEN.has(i);
-      const preview = Object.entries(x.f||{}).filter(([,v])=>v).slice(0,4).map(([k,v])=>`${k}:${v}`).join(' · ');
-      return `<div class="hist-card" style="border-left:3px solid ${tbl?.c||'var(--t3)'}">
-        <div class="hist-header" onclick="togHist(${i})">
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="color:var(--t4);font-size:11px">${isOpen?'▼':'▶'}</span>
-            <span style="font-size:18px">${tbl?.icon||'📄'}</span>
-            <span class="badge" style="color:${tbl?.c||'var(--t3)'};background:${tbl?.c||'var(--t3)'}18">${tbl?.label||x.t}</span>
-            ${synced?`<span class="badge" style="color:var(--green);background:var(--green-bg)">✓ 飞书</span>`:`<span class="badge" style="color:var(--t4);background:var(--bg2)">本地</span>`}
-          </div>
-          <span style="font-size:12px;color:var(--t4)">${new Date(x.d).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
-        </div>
-        ${!isOpen ? `<div class="hist-preview">${H(preview)||'(无字段预览)'}</div>` : `
-        <div class="hist-body" onclick="event.stopPropagation()">
-          <div style="margin-top:12px">
-            <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">映射字段</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
-              ${Object.entries(x.f||{}).map(([k,v])=>`
-              <div style="padding:6px 10px;background:var(--bg2);border-radius:var(--rx);border:1px solid var(--border)">
-                <div style="font-size:10px;color:var(--t4)">${H(k)}</div>
-                <div style="font-size:13px;font-weight:600;color:${v?'var(--t1)':'var(--t4)'}">${H(String(v||'(空)'))}</div>
-              </div>`).join('')}
-            </div>
-            ${x.r?.header && Object.keys(x.r.header).filter(k=>x.r.header[k]).length ? `
-            <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">原始识别</div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:14px">
-              ${Object.entries(x.r.header).filter(([,v])=>v).map(([k,v])=>`
-              <div style="padding:5px 8px;background:var(--blue-bg);border-radius:var(--rx)">
-                <div style="font-size:10px;color:var(--t4)">${H(k)}</div>
-                <div style="font-size:12px;font-weight:600">${H(String(v))}</div>
-              </div>`).join('')}
-            </div>` : ''}
-            ${x.r?.items?.length ? `
-            <div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:8px">行项目 (${x.r.items.length})</div>
-            <div class="tw" style="margin-bottom:14px"><table style="font-size:13px">
-              <thead><tr><th>产品</th><th>数量</th><th>单价</th><th>小计</th></tr></thead>
-              <tbody>${x.r.items.map(it=>`<tr>
-                <td class="fw6">${H(it.item||it.name||'-')}</td>
-                <td>${H(String(it.qty||'-'))}</td>
-                <td>${H(String(it.unitPrice||it.price||'-'))}</td>
-                <td class="amt" style="color:var(--amt-total)">${H(String(it.subtotal||it.amount||'-'))}</td>
-              </tr>`).join('')}</tbody>
-            </table></div>` : ''}
-            ${synced ? `<div style="font-size:11px;color:var(--t4);margin-bottom:10px;font-family:var(--fm)">Record: ${H(x.rid)}</div>` : ''}
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn-sm btn-success" onclick="histSendFeishu(${i})" id="hbtn-${i}">🪁 ${synced?'重新发送':'发到飞书'}</button>
-              <button class="btn-sm btn-info" onclick="histCopy(${i})">📋 复制</button>
-              <button class="btn-sm btn-danger" onclick="histDel(${i})">删除</button>
-            </div>
-            <div id="hmsg-${i}"></div>
-          </div>
-        </div>`}
-      </div>`;
-    }).join('')}
-  </div>`;
-
-  return `
-  <div class="phdr">
-    <div class="pt">📷 扫描录入</div>
-    <div class="ps">上传单据图片 → AI识别字段 → 一键写入飞书 · 支持采购单/发货单/发票/垫付凭证</div>
-  </div>
-  <div class="scan-layout">${leftCol}${rightCol}</div>
-  ${histSection}`;
+  const histH=hist.length===0?'':`<div class="sec"><div class="sec-hdr"><span class="sec-title">🗂 录入历史 <span style="font-size:14px;font-weight:400;color:var(--t4)">${hist.length}条</span></span><button class="btn-sm btn-danger" onclick="if(confirm('清空？')){saveHist([]);render()}">清空</button></div>${hist.map((x,i)=>{const tbl=SCAN_TABLES.find(t=>t.key===x.t);const synced=x.rid&&x.rid!=='本地';const isO=HIST_OPEN.has(i);const pre=Object.entries(x.f||{}).filter(([,v])=>v).slice(0,4).map(([k,v])=>`${k}:${v}`).join(' · ');return`<div class="hist-card" style="border-left:3px solid ${tbl?.c||'var(--t3)'}"><div class="hist-header" onclick="togHist(${i})"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--t4);font-size:11px">${isO?'▼':'▶'}</span><span style="font-size:18px">${tbl?.icon||'📄'}</span><span class="badge" style="color:${tbl?.c||'var(--t3)'};background:${tbl?.c||'var(--t3)'}18">${tbl?.label||x.t}</span>${synced?'<span class="badge" style="color:var(--green);background:var(--green-bg)">✓ 飞书</span>':'<span class="badge" style="color:var(--t4);background:var(--bg2)">本地</span>'}</div><span style="font-size:12px;color:var(--t4)">${new Date(x.d).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>${!isO?`<div class="hist-preview">${H(pre)}</div>`:`<div class="hist-body" onclick="event.stopPropagation()"><div style="margin-top:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">${Object.entries(x.f||{}).map(([k,v])=>`<div style="padding:6px 10px;background:var(--bg2);border-radius:var(--rx);border:1px solid var(--border)"><div style="font-size:10px;color:var(--t4)">${H(k)}</div><div style="font-size:13px;font-weight:600">${H(String(v||'(空)'))}</div></div>`).join('')}</div>${x.r?.items?.length?`<div class="tw" style="margin-bottom:14px"><table style="font-size:13px"><thead><tr><th>产品</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>${x.r.items.map(it=>`<tr><td class="fw6">${H(it.item||it.name||'-')}</td><td>${it.qty||'-'}</td><td>${it.unitPrice||'-'}</td><td class="amt" style="color:var(--amt-total)">${it.subtotal||'-'}</td></tr>`).join('')}</tbody></table></div>`:''}<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-sm btn-success" onclick="histSendFeishu(${i})" id="hbtn-${i}">🪁 ${synced?'重发':'发到飞书'}</button><button class="btn-sm btn-info" onclick="histCopy(${i})">📋 复制</button><button class="btn-sm btn-danger" onclick="histDel(${i})">删除</button></div><div id="hmsg-${i}"></div></div></div>`}</div>`}).join('')}</div>`;
+  return `<div class="phdr"><div class="pt">📷 扫描录入</div><div class="ps">上传单据 → AI识别 → 一键写入飞书</div></div><div class="scan-layout">${leftCol}${rightCol}</div>${histH}`;
 }
+function bindScannerEvents(){const dz=document.getElementById('dz');if(!dz)return;dz.addEventListener('dragover',e=>{e.preventDefault();SC.drag=true;dz.classList.add('drag')});dz.addEventListener('dragleave',()=>{SC.drag=false;dz.classList.remove('drag')});dz.addEventListener('drop',e=>{e.preventDefault();SC.drag=false;if(e.dataTransfer.files[0])pickFile(e.dataTransfer.files[0])});}
+document.addEventListener('paste',e=>{if(tab!=='scanner')return;const items=e.clipboardData?.items;if(!items)return;for(let i=0;i<items.length;i++)if(items[i].type.startsWith('image/')){e.preventDefault();const b=items[i].getAsFile();if(b)pickFile(new File([b],`paste-${Date.now()}.png`,{type:b.type}));return;}});
+function pickFile(f){if(!f)return;SC.file=f;SC.result=null;SC.target=null;SC.mapping=null;SC.msg=null;if(f.type.startsWith('image/')){const r=new FileReader();r.onload=e=>{SC.preview=e.target.result;render()};r.readAsDataURL(f)}else{SC.preview=null;render()}}
 
-function bindScannerEvents(){
-  const dz = document.getElementById('dz');
-  if(!dz) return;
-  dz.addEventListener('dragover', e=>{e.preventDefault();SC.drag=true;dz.classList.add('drag')});
-  dz.addEventListener('dragleave', ()=>{SC.drag=false;dz.classList.remove('drag')});
-  dz.addEventListener('drop', e=>{e.preventDefault();SC.drag=false;dz.classList.remove('drag');if(e.dataTransfer.files[0])pickFile(e.dataTransfer.files[0])});
-}
-
-document.addEventListener('paste', e=>{
-  if(tab!=='scanner') return;
-  const items=e.clipboardData?.items;
-  if(!items) return;
-  for(let i=0;i<items.length;i++) if(items[i].type.startsWith('image/')){
-    e.preventDefault();
-    const b=items[i].getAsFile();
-    if(b) pickFile(new File([b],`paste-${Date.now()}.png`,{type:b.type}));
-    return;
-  }
-});
-
-function pickFile(f){
-  if(!f) return;
-  SC.file=f; SC.result=null; SC.target=null; SC.mapping=null; SC.msg=null;
-  if(f.type.startsWith('image/')){
-    const r=new FileReader();
-    r.onload=e=>{SC.preview=e.target.result;render()};
-    r.readAsDataURL(f);
-  } else { SC.preview=null; render(); }
-}
-
+/* PAGE: RnD */
 function pgRnD(){
-  const dev=DB.products.filter(p=>p.status==='研发中'||p.status==='生产中').length;
-  return `<div class="phdr"><div class="pt">🔬 自有产品研发与生产</div><div class="ps">数据来自飞书「产品管理表」</div></div>
-  <div class="g3">${kpi('产品总数',DB.products.length,'','var(--blue)')}${kpi('研发/生产中',dev,'','var(--orange)')}${kpi('已完成',DB.products.filter(p=>p.status==='已完成').length,'','var(--green)')}</div>
-  <div class="sec"><div class="card"><div class="tw"><table>
-    <thead><tr><th>SKU</th><th>产品名称</th><th>类别</th><th>阶段</th><th>状态</th><th>供应商</th><th>成本</th><th>备注</th></tr></thead>
-    <tbody>${DB.products.length===0?'<tr><td class="empty" colspan="8">暂无数据</td></tr>':DB.products.map(p=>`<tr><td class="cod fw8 nw" style="color:var(--blue)">${H(p.sku||'-')}</td><td class="fw7 nw">${H(p.name||p.productName||'-')}</td><td>${H(p.category||'-')}</td><td>${H(p.stage||'-')}</td><td>${bdg(p.status)}</td><td>${H(p.supplier||'-')}</td><td class="amt fw6" style="color:var(--amt-total)">¥${F(p.cost)}</td><td class="wrap" style="color:var(--t3)">${H(p.notes||'-')}</td></tr>`).join('')}</tbody>
-  </table></div></div></div>`;
+  return `<div class="phdr"><div class="pt">🔬 自有产品研发与生产</div></div>
+  <div class="g3">${kpi('产品总数',DB.products.length,'','var(--blue)')}${kpi('研发/生产中',DB.products.filter(p=>p.status==='研发中'||p.status==='生产中').length,'','var(--orange)')}${kpi('已完成',DB.products.filter(p=>p.status==='已完成').length,'','var(--green)')}</div>
+  <div class="sec"><div class="card"><div class="tw"><table><thead><tr><th>SKU</th><th>产品名称</th><th>类别</th><th>阶段</th><th>状态</th><th>供应商</th><th>成本</th></tr></thead><tbody>${DB.products.length===0?'<tr><td class="empty" colspan="7">暂无</td></tr>':DB.products.map(p=>`<tr><td class="cod fw8 nw" style="color:var(--blue)">${H(p.sku||'-')}</td><td class="fw7 nw">${H(p.name||p.productName||'-')}</td><td>${H(p.category||'-')}</td><td>${H(p.stage||'-')}</td><td>${bdg(p.status)}</td><td>${H(p.supplier||'-')}</td><td class="amt fw6" style="color:var(--amt-total)">¥${F(p.cost)}</td></tr>`).join('')}</tbody></table></div></div></div>`;
 }
 
+/* PAGE: US */
 function pgUS(){
-  const tA=DB.advances.reduce((s,p)=>s+N(p.amount),0);
-  const tR=DB.advances.reduce((s,p)=>s+N(p.returned),0);
-  const advH=`<div class="tw"><table><thead><tr><th>日期</th><th>用途说明</th><th>类型</th><th>垫付金额</th><th>已还</th><th>未还余额</th><th>状态</th><th>关联订单</th><th>备注</th></tr></thead><tbody>${DB.advances.length===0?'<tr><td class="empty" colspan="9">暂无垫付记录</td></tr>':DB.advances.map(p=>`<tr><td class="cod nw">${H(p.date||'-')}</td><td class="wrap">${H(p.purpose||'-')}</td><td>${bdg(p.type||'-')}</td><td class="amt fw8" style="color:var(--red)">¥${F(p.amount)}</td><td class="amt fw6" style="color:var(--green)">¥${F(p.returned||0)}</td><td class="amt fw8" style="color:var(--red)">¥${F(N(p.amount)-N(p.returned))}</td><td>${bdg(p.status)}</td><td class="cod nw">${H(p.relatedOrder||'-')}</td><td class="wrap" style="color:var(--t3)">${H(p.notes||'-')}</td></tr>`).join('')}</tbody></table></div>`;
-  const shipH=`<div class="tw"><table><thead><tr><th>日期</th><th>方向</th><th>关联订单</th><th>SKU</th><th>产品</th><th>数量</th><th>物流单号</th></tr></thead><tbody>${DB.shipments.length===0?'<tr><td class="empty" colspan="7">暂无出货记录</td></tr>':DB.shipments.map(s=>`<tr><td class="cod nw">${H(s.date||'-')}</td><td>${bdg(s.direction||'-')}</td><td class="cod nw">${H(s.relatedOrder||'-')}</td><td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td><td class="nw">${H(s.product||'-')}</td><td>${H(s.qty||'-')}</td><td class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<div class="phdr"><div class="pt">🇺🇸 美国合作管理</div><div class="ps">垫付款 · 发货记录</div></div>
-  <div class="g3">${kpi('垫付总额','¥'+F(tA),'','var(--purple)')}${kpi('已还金额','¥'+F(tR),'','var(--green)')}${kpi('未还余额','¥'+F(tA-tR),'','var(--red)')}</div>
-  <div class="sec"><div class="card"><div class="stabs"><button class="stab${usT==='adv'?' on':''}" onclick="usT='adv';render()">💰 垫付款明细</button><button class="stab${usT==='ship'?' on':''}" onclick="usT='ship';render()">📦 出货记录</button></div><div>${usT==='adv'?advH:shipH}</div></div></div>`;
+  const tA=DB.advances.reduce((s,p)=>s+N(p.amount),0),tR=DB.advances.reduce((s,p)=>s+N(p.returned),0);
+  return `<div class="phdr"><div class="pt">🇺🇸 美国合作管理</div></div>
+  <div class="g3">${kpi('垫付总额','¥'+F(tA),'','var(--purple)')}${kpi('已还','¥'+F(tR),'','var(--green)')}${kpi('未还','¥'+F(tA-tR),'','var(--red)')}</div>
+  <div class="sec"><div class="card"><div class="stabs"><button class="stab${usT==='adv'?' on':''}" onclick="usT='adv';render()">💰 垫付明细</button><button class="stab${usT==='ship'?' on':''}" onclick="usT='ship';render()">📦 出货记录</button></div><div>${usT==='adv'?`<div class="tw"><table><thead><tr><th>日期</th><th>用途</th><th>垫付金额</th><th>已还</th><th>未还</th><th>状态</th><th>备注</th></tr></thead><tbody>${DB.advances.length===0?'<tr><td class="empty" colspan="7">暂无</td></tr>':DB.advances.map(p=>`<tr><td class="cod nw">${H(p.date||'-')}</td><td class="wrap">${H(p.purpose||'-')}</td><td class="amt fw8" style="color:var(--red)">¥${F(p.amount)}</td><td class="amt" style="color:var(--green)">¥${F(p.returned||0)}</td><td class="amt fw8" style="color:var(--red)">¥${F(N(p.amount)-N(p.returned))}</td><td>${bdg(p.status)}</td><td class="wrap" style="color:var(--t3)">${H(p.notes||'-')}</td></tr>`).join('')}</tbody></table></div>`:`<div class="tw"><table><thead><tr><th>日期</th><th>方向</th><th>关联订单</th><th>SKU</th><th>产品</th><th>数量</th><th>物流单号</th></tr></thead><tbody>${DB.shipments.length===0?'<tr><td class="empty" colspan="7">暂无</td></tr>':DB.shipments.map(s=>`<tr><td class="cod nw">${H(s.date||'-')}</td><td>${bdg(s.direction||'-')}</td><td class="cod nw">${H(s.relatedOrder||'-')}</td><td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td><td>${H(s.product||'-')}</td><td>${H(s.qty||'-')}</td><td class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</td></tr>`).join('')}</tbody></table></div>`}</div></div></div>`;
 }
 
+/* PAGE: ORDERS */
 function pgOrd(){
-  const tot=DB.productionOrders.reduce((s,o)=>s+N(o.amount),0);
-  const paid=DB.productionOrders.reduce((s,o)=>s+N(o.paidAmount),0);
-  const act=DB.productionOrders.filter(o=>o.status!=='已完成'&&o.status!=='已取消').length;
+  const tot=DB.productionOrders.reduce((s,o)=>s+N(o.amount),0),paid=DB.productionOrders.reduce((s,o)=>s+N(o.paidAmount),0);
   const fil=ordF==='all'?DB.productionOrders:DB.productionOrders.filter(o=>(o.source||'手动')===ordF);
-  return `<div class="phdr"><div class="pt">📦 下单 · 出货 · 付款跟进</div><div class="ps">点击订单行展开品项和出货记录</div></div>
-  <div class="g3">${kpi('订单总额','¥'+F(tot),'','var(--amt-total)')}${kpi('已付金额','¥'+F(paid),'','var(--amt-paid)')}${kpi('待付金额','¥'+F(tot-paid),'进行中'+act+'单','var(--amt-due)')}</div>
-  <div class="sec">
-    <div class="pills">${['all','Zoho','手动','供应商','供应商下单','客户'].map(f=>`<button class="pill${ordF===f?' on':''}" onclick="ordF='${f}';render()">${f==='all'?'全部':f}<span style="opacity:.5;font-size:12.5px;margin-left:3px">(${f==='all'?DB.productionOrders.length:DB.productionOrders.filter(o=>(o.source||'手动')===f).length})</span></button>`).join('')}</div>
-    <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU/产品</th><th>描述/规格</th><th>数量</th><th>总金额</th><th>已付</th><th>待付</th><th>生产状态</th><th>付款状态</th></tr></thead><tbody>${prodTable(fil,'po')}</tbody></table></div></div>
-  </div>`;
+  return `<div class="phdr"><div class="pt">📦 下单 · 出货 · 付款跟进</div><div class="ps">点击订单行展开明细</div></div>
+  <div class="g3">${kpi('订单总额','¥'+F(tot),'','var(--amt-total)')}${kpi('已付','¥'+F(paid),'','var(--amt-paid)')}${kpi('待付','¥'+F(tot-paid),'','var(--amt-due)')}</div>
+  <div class="sec"><div class="pills">${['all','供应商下单','供应商制单','我司出单','客户下单'].map(f=>`<button class="pill${ordF===f?' on':''}" onclick="ordF='${f}';render()">${f==='all'?'全部':f}</button>`).join('')}</div>
+  <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU</th><th>产品名称</th><th>数量</th><th>总金额</th><th>已付</th><th>待付</th><th>状态</th><th>付款</th></tr></thead><tbody>${prodTable(fil,'po')}</tbody></table></div></div></div>`;
 }
 
+/* PAGE: B2B */
 function pgB2B(){
-  const tot=DB.bOrders.reduce((s,o)=>s+N(o.amount),0);
-  const paid=DB.bOrders.reduce((s,o)=>s+N(o.paidAmount),0);
-  const msr=DB.bOrders.filter(o=>o.orderType==='月度报告').reduce((s,o)=>s+N(o.amount),0);
+  const tot=DB.bOrders.reduce((s,o)=>s+N(o.amount),0),paid=DB.bOrders.reduce((s,o)=>s+N(o.paidAmount),0);
   const inv=DB.invoices.reduce((s,i)=>s+N(i.amount),0);
-  const invH=`<div class="tw"><table><thead><tr><th>发票号</th><th>客户</th><th>开票金额</th><th>币种</th><th>状态</th><th>关联订单</th><th>备注</th></tr></thead><tbody>${DB.invoices.length===0?'<tr><td class="empty" colspan="7">暂无开票记录</td></tr>':DB.invoices.map(i=>`<tr><td class="cod fw8 nw" style="color:var(--blue)">${H(i.invoiceNo||'-')}</td><td class="fw6">${H(i.customer||'-')}</td><td class="amt fw8" style="color:var(--amt-total)">¥${F(i.amount)}</td><td>${H(i.currency||'-')}</td><td>${bdg(i.status)}</td><td class="cod nw">${H(i.relatedOrder||'-')}</td><td class="wrap" style="color:var(--t3)">${H(i.notes||'-')}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<div class="phdr"><div class="pt">🤝 B端客户履约</div><div class="ps">点击展开品项和出货明细 · MSR = Monthly Sales Report</div></div>
-  <div class="g4">${kpi('订单总额','¥'+F(tot),'','var(--amt-total)')}${kpi('已收款','¥'+F(paid),'','var(--amt-paid)')}${kpi('待收款','¥'+F(tot-paid),'','var(--amt-due)')}${kpi('月报收入','¥'+F(msr),'已开票 ¥'+F(inv),'var(--teal)')}</div>
-  <div class="sec"><div class="card"><div class="stabs"><button class="stab${b2T==='ord'?' on':''}" onclick="b2T='ord';render()">📋 B端订单</button><button class="stab${b2T==='inv'?' on':''}" onclick="b2T='inv';render()">🧾 开票记录</button></div><div>${b2T==='ord'?`<div class="tw"><table><thead><tr><th>订单号</th><th>类型</th><th>来源</th><th>客户</th><th>SKU/产品</th><th>描述/报告期</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bTable(DB.bOrders,'bo')}</tbody></table></div>`:invH}</div></div></div>`;
+  return `<div class="phdr"><div class="pt">🤝 B端客户履约</div></div>
+  <div class="g4">${kpi('订单总额','¥'+F(tot),'','var(--amt-total)')}${kpi('已收','¥'+F(paid),'','var(--amt-paid)')}${kpi('待收','¥'+F(tot-paid),'','var(--amt-due)')}${kpi('已开票','¥'+F(inv),'','var(--teal)')}</div>
+  <div class="sec"><div class="card"><div class="stabs"><button class="stab${b2T==='ord'?' on':''}" onclick="b2T='ord';render()">📋 B端订单</button><button class="stab${b2T==='inv'?' on':''}" onclick="b2T='inv';render()">🧾 开票记录</button></div><div>${b2T==='ord'?`<div class="tw"><table><thead><tr><th>订单号</th><th>类型</th><th>来源</th><th>客户</th><th>SKU</th><th>产品名称</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bTable(DB.bOrders,'bo')}</tbody></table></div>`:`<div class="tw"><table><thead><tr><th>发票号</th><th>客户</th><th>开票金额</th><th>币种</th><th>状态</th><th>备注</th></tr></thead><tbody>${DB.invoices.length===0?'<tr><td class="empty" colspan="6">暂无</td></tr>':DB.invoices.map(i=>`<tr><td class="cod fw8 nw" style="color:var(--blue)">${H(i.invoiceNo||'-')}</td><td class="fw6">${H(i.customer||'-')}</td><td class="amt fw8" style="color:var(--amt-total)">¥${F(i.amount)}</td><td>${H(i.currency||'-')}</td><td>${bdg(i.status)}</td><td class="wrap" style="color:var(--t3)">${H(i.notes||'-')}</td></tr>`).join('')}</tbody></table></div>`}</div></div></div>`;
 }
 
-// ── 已修复：配置页渲染函数 (不再被转义符干扰) ──
-function pgSet() {
-  const fs = cfg.fs || {};
+/* ══════════════════════════════════════════════
+   PAGE: SETTINGS — App Token 全局 + 保存修复
+══════════════════════════════════════════════ */
+function pgSet(){
+  const fs=cfg.fs||{};
   const tblRows=[['产品',DB.products.length,'var(--blue)'],['生产订单',DB.productionOrders.length,'var(--orange)'],['B端订单',DB.bOrders.length,'var(--amt-total)'],['垫付',DB.advances.length,'var(--red)'],['出货',DB.shipments.length,'var(--purple)'],['开票',DB.invoices.length,'var(--green)']];
-
-  let html = `
-  <div class="phdr"><div class="pt">⚙ 配置</div><div class="ps">业务数据 Worker · OCR Worker · 飞书连接</div></div>
-
+  const FT=[{k:'production',l:'📦 生产订单',c:'var(--blue)',dt:'tblyUdlkUkAGiJwo'},{k:'b2b',l:'🤝 B端订单',c:'var(--green)',dt:'tbl1vDHZlSKGBeI7'},{k:'ship_in',l:'📥📤 出货记录（收货+发货共用）',c:'var(--orange)',dt:'tbl5tQRwRLchLiL8'},{k:'advance',l:'💰 垫付款',c:'var(--purple)',dt:'tbl7FGIDEtkZBid8'},{k:'invoice',l:'🧾 开票',c:'var(--red)',dt:'tbl9EmtJeZ7enX5b'}];
+  return `
+  <div class="phdr"><div class="pt">⚙ 配置</div></div>
   <div class="cfg-section">
     <div class="cfg-title">🔌 Worker 连接</div>
-    <div style="margin-bottom:12px">
-      <label class="fl">业务数据 Worker URL</label>
-      <input id="ci" class="fi" value="${H(cfg.dashboardUrl)}">
-    </div>
-    <div style="margin-bottom:16px">
-      <label class="fl">OCR + Gemini Worker URL</label>
-      <input id="ci2" class="fi" value="${H(cfg.ocrUrl)}">
-    </div>
-    <button class="btn btn-primary" onclick="cfg.dashboardUrl=document.getElementById('ci').value.trim().replace(/\\/$/,'');cfg.ocrUrl=document.getElementById('ci2').value.trim().replace(/\\/$/,'');saveC();doSync()">保存配置</button>
+    <div style="margin-bottom:12px"><label class="fl">业务数据 Worker URL</label><input id="ci" class="fi" value="${H(cfg.dashboardUrl)}"></div>
+    <div style="margin-bottom:16px"><label class="fl">OCR + Gemini Worker URL</label><input id="ci2" class="fi" value="${H(cfg.ocrUrl)}"></div>
+    <button class="btn btn-primary" onclick="saveCfgField('dashboardUrl',document.getElementById('ci').value.trim().replace(/\\/$/,''));saveCfgField('ocrUrl',document.getElementById('ci2').value.trim().replace(/\\/$/,''));doSync()">保存</button>
   </div>
-
   <div class="cfg-section">
     <div class="cfg-title">🔑 飞书连接</div>
-    <div style="font-size:13px;color:var(--t3);margin-bottom:14px;line-height:1.7">
-      App Token 所有表共用，从飞书URL <code style="background:var(--bg2);padding:1px 6px;border-radius:4px">/base/<b>[appToken]</b></code> 复制
-    </div>
     <div class="g2" style="margin-bottom:12px">
       <div><label class="fl">App ID</label><input class="fi" value="${H(fs.aid||'')}" onchange="saveFsField('aid',this.value)"></div>
       <div><label class="fl">App Secret</label><input class="fi" type="password" value="${H(fs.as||'')}" onchange="saveFsField('as',this.value)"></div>
     </div>
-    <div style="margin-bottom:16px">
-      <label class="fl">App Token（所有表共用）</label>
-      <input class="fi" value="${H(fs.at||'')}" onchange="saveFsField('at',this.value)" placeholder="从飞书URL /base/xxx 复制">
-    </div>`;
-
-  const tablesInfo = [
-    {key:'production',label:'📦 生产订单',c:'var(--blue)',tid:'tblyUdlkUkAGiJwo'},
-    {key:'b2b',label:'🤝 B端订单',c:'var(--green)',tid:'tbl1vDHZlSKGBeI7'},
-    {key:'ship_in',label:'📥📤 出货记录（共用）',c:'var(--orange)',tid:'tbl5tQRwRLchLiL8'},
-    {key:'advance',label:'💰 垫付款',c:'var(--purple)',tid:'tbl7FGIDEtkZBid8'},
-    {key:'invoice',label:'🧾 开票',c:'var(--red)',tid:'tbl9EmtJeZ7enX5b'},
-  ];
-
-  tablesInfo.forEach(t => {
-    html += `
-    <div style="border-left:3px solid ${t.c};padding:10px 14px;margin-bottom:10px;border-radius:0 var(--rx) var(--rx) 0;background:var(--bg2)">
-      <div style="font-size:13px;font-weight:700;margin-bottom:6px">${t.label}</div>
-      <label class="fl">Table ID</label>
-      <input class="fi fi-sm" value="${H(fs[t.key]?.tid||t.tid)}" onchange="saveFsTid('${t.key}',this.value)">
-    </div>`;
-  });
-
-  html += `
+    <div style="margin-bottom:16px"><label class="fl">App Token（所有表共用）</label><input class="fi" value="${H(fs.at||'')}" onchange="saveFsField('at',this.value)" placeholder="从飞书URL /base/xxx 复制"></div>
+    ${FT.map(t=>`<div style="border-left:3px solid ${t.c};padding:10px 14px;margin-bottom:10px;border-radius:0 var(--rx) var(--rx) 0;background:var(--bg2)"><div style="font-size:13px;font-weight:700;margin-bottom:6px">${t.l}</div><label class="fl">Table ID</label><input class="fi fi-sm" value="${H(fs[t.k]?.tid||t.dt)}" onchange="saveFsTid('${t.k}',this.value)"></div>`).join('')}
   </div>
   <div class="cfg-section">
     <div class="cfg-title">📊 数据状态</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-      ${tblRows.map(([l,v,c])=>`<div style="background:var(--bg2);border-radius:var(--rs);padding:14px 16px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:600;color:var(--t3)">${l}</div><div style="font-size:28px;font-weight:800;color:${c};margin-top:5px">${v}</div></div>`).join('')}
-    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">${tblRows.map(([l,v,c])=>`<div style="background:var(--bg2);border-radius:var(--rs);padding:14px 16px;border:1px solid var(--border)"><div style="font-size:12px;font-weight:600;color:var(--t3)">${l}</div><div style="font-size:28px;font-weight:800;color:${c};margin-top:5px">${v}</div></div>`).join('')}</div>
     <div style="font-size:13px;color:var(--t4)">上次同步：${lastSync?lastSync.toLocaleString('zh-CN'):'从未'}</div>
   </div>`;
-
-  return html;
 }
 
 /* ══════════════════════════════════════════════
    INIT
 ══════════════════════════════════════════════ */
 document.getElementById('d-date').textContent = new Date().toLocaleDateString('zh-CN', {month:'long',day:'numeric',weekday:'short'});
-if (!cfg.fs) cfg.fs = {};
 const DEFAULT_FS = {
-  production: { tid: 'tblyUdlkUkAGiJwo' },
-  b2b:        { tid: 'tbl1vDHZlSKGBeI7' },
-  ship_in:    { tid: 'tbl5tQRwRLchLiL8' },
-  advance:    { tid: 'tbl7FGIDEtkZBid8' },
-  invoice:    { tid: 'tbl9EmtJeZ7enX5b' },
+  production:{tid:'tblyUdlkUkAGiJwo'},b2b:{tid:'tbl1vDHZlSKGBeI7'},
+  ship_in:{tid:'tbl5tQRwRLchLiL8'},advance:{tid:'tbl7FGIDEtkZBid8'},invoice:{tid:'tbl9EmtJeZ7enX5b'}
 };
 Object.entries(DEFAULT_FS).forEach(([k,v])=>{ if(!cfg.fs[k]) cfg.fs[k]=v; });
-saveC();
-
-renderNav();
-render();
-doSync();
+saveC(); renderNav(); render(); doSync();
 </script>
 </body>
 </html>
