@@ -270,7 +270,7 @@ async function doSync() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || '数据错误');
-    DB = { ...DB, ...j.data };
+    DB = { ...DB, ...normDB(j.data) };
     lastSync = new Date();
     document.getElementById('d-sync').textContent = '同步 ' + lastSync.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
     dot.className = 'dot'; render();
@@ -306,29 +306,105 @@ function clearErr(){ const e=document.getElementById('_err'); if(e)e.remove(); }
 function kpi(l,v,s,c){ return `<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v" style="color:${c}">${v}</div><div class="kpi-s">${s||'&nbsp;'}</div></div>`; }
 
 /* ══════════════════════════════════════════════
-   [FIX #3] 按币种分组统计
+   字段标准化 — 飞书返回中文字段名统一转英文
+   兼容两种格式: {amount:100} 或 {'订单金额':100}
 ══════════════════════════════════════════════ */
+function normOrder(r) {
+  if (!r) return r;
+  return {
+    ...r,
+    orderNo:    r.orderNo    || r['订单编号'] || r._id || '',
+    source:     r.source     || r['来源']     || '',
+    sku:        r.sku        || r['SKU']      || '',
+    product:    r.product    || r['产品名称'] || r.productName || '',
+    qty:        N(r.qty      ?? r['数量']     ?? 0),
+    unitPrice:  N(r.unitPrice ?? r['单价']    ?? 0),
+    currency:   (r.currency  || r['币种']     || 'CNY').toUpperCase(),
+    amount:     N(r.amount   ?? r['订单金额'] ?? 0),
+    paidAmount: N(r.paidAmount ?? r['已付金额'] ?? r['已收金额'] ?? 0),
+    status:     r.status     || r['生产状态'] || r['履约状态'] || '',
+    payStatus:  r.payStatus  || r['付款状态'] || '',
+    invoiceStatus: r.invoiceStatus || r['开票状态'] || '',
+    customer:   r.customer   || r['客户名称'] || '',
+    supplier:   r.supplier   || r['供应商']   || '',
+    zohoId:     r.zohoId     || r['ZohoID']   || '',
+    orderType:  r.orderType  || r['订单类型'] || '',
+  };
+}
+function normAdvance(r) {
+  if (!r) return r;
+  return {
+    ...r,
+    date:     r.date     || r['日期']   || '',
+    purpose:  r.purpose  || r['用途说明'] || r['备注'] || '',
+    currency: (r.currency || r['币种'] || 'CNY').toUpperCase(),
+    amount:   N(r.amount   ?? r['垫付金额'] ?? 0),
+    returned: N(r.returned ?? r['已还金额'] ?? 0),
+    status:   r.status   || r['还款状态'] || '',
+    notes:    r.notes    || r['备注']   || '',
+  };
+}
+function normShipment(r) {
+  if (!r) return r;
+  return {
+    ...r,
+    date:         r.date         || r['日期']     || '',
+    direction:    r.direction    || r['方向']     || '',
+    relatedOrder: r.relatedOrder || r['关联订单号'] || '',
+    sku:          r.sku          || r['SKU']      || '',
+    product:      r.product      || r['产品名称'] || '',
+    qty:          N(r.qty        ?? r['数量']     ?? 0),
+    unitPrice:    N(r.unitPrice  ?? r['单价']     ?? 0),
+    tracking:     r.tracking     || r['物流单号'] || '',
+    notes:        r.notes        || r['备注']     || '',
+  };
+}
+function normInvoice(r) {
+  if (!r) return r;
+  return {
+    ...r,
+    invoiceNo: r.invoiceNo || r['发票号'] || '',
+    customer:  r.customer  || r['客户名称'] || '',
+    currency:  (r.currency || r['币种'] || 'CNY').toUpperCase(),
+    amount:    N(r.amount  ?? r['开票金额'] ?? 0),
+    status:    r.status    || r['开票状态'] || '',
+    notes:     r.notes     || r['备注'] || '',
+  };
+}
+function normDB(raw) {
+  return {
+    products:         (raw.products         || []),
+    productionOrders: (raw.productionOrders || []).map(normOrder),
+    bOrders:          (raw.bOrders          || []).map(normOrder),
+    advances:         (raw.advances         || []).map(normAdvance),
+    shipments:        (raw.shipments        || []).map(normShipment),
+    invoices:         (raw.invoices         || []).map(normInvoice),
+  };
+}
+// 货币符号 map（支持多币种）
+const CUR_SYM = { USD:'$', CNY:'¥', EUR:'€', GBP:'£', SGD:'S$', JPY:'¥', HKD:'HK$', AUD:'A$' };
+function curSym(cur){ return CUR_SYM[(cur||'CNY').toUpperCase()] || (cur+'$'); }
+
 function sumByCurrency(records, amountField) {
   amountField = amountField || 'amount';
   const acc = {};
   (records||[]).forEach(r => {
-    const cur = (r.currency || r.币种 || 'CNY').toUpperCase();
-    const val = N(r[amountField] || r['订单金额'] || r['垫付金额'] || 0);
-    acc[cur] = (acc[cur] || 0) + val;
+    // 飞书字段名可能是 currency 或 币种
+    const cur = (r.currency || r['币种'] || 'CNY').toUpperCase();
+    const val = N(r[amountField] !== undefined ? r[amountField] : (r['订单金额'] || r['垫付金额'] || 0));
+    if(val !== 0) acc[cur] = (acc[cur] || 0) + val;
   });
   return acc;
 }
-function fmtCurrency(map) {
-  return Object.entries(map).map(([cur, v]) => {
-    const sym = cur === 'USD' ? '$' : '¥';
-    return `<span style="font-size:13px;color:var(--t4)">${cur}</span> <span style="font-weight:700">${sym}${F(v)}</span>`;
-  }).join('<br>') || '¥0.00';
+function fmtCurLine(cur, v, c) {
+  const sym = curSym(cur);
+  return `<div style="margin-top:5px;line-height:1.2"><span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.07);color:var(--t3);margin-right:4px">${cur}</span><span style="font-size:22px;font-weight:800;color:${c};font-family:var(--fm)">${sym}${F(v)}</span></div>`;
 }
 function kpiCur(l, map, hint, c) {
-  const lines = Object.entries(map).map(([cur, v]) => {
-    const sym = cur === 'USD' ? '$' : '¥';
-    return `<div style="margin-top:6px;line-height:1.2"><span class="cur-${cur==='USD'?'usd':'cny'}">${cur}</span> <span style="font-size:24px;font-weight:800;color:${c}">${sym}${F(v)}</span></div>`;
-  }).join('') || `<div class="kpi-v" style="color:${c}">¥0.00</div>`;
+  const entries = Object.entries(map).filter(([,v])=>v>0);
+  const lines = entries.length
+    ? entries.map(([cur,v]) => fmtCurLine(cur,v,c)).join('')
+    : `<div class="kpi-v" style="color:${c}">—</div>`;
   return `<div class="kpi"><div class="kpi-l">${l}</div>${lines}<div class="kpi-s">${hint||'&nbsp;'}</div></div>`;
 }
 
@@ -343,46 +419,51 @@ function prodTable(orders, pfx) {
   const G = {};
   orders.forEach(o => {
     const k = String(o.orderNo||o._id||'—');
-    if(!G[k]) G[k]={k,rows:[],tot:0,paid:0,src:o.source,st:o.status,pay:o.payStatus,zoho:o.zohoId};
+    if(!G[k]) G[k]={k,rows:[],tot:0,paid:0,src:o.source,st:o.status,pay:o.payStatus,zoho:o.zohoId,cur:'CNY'};
     G[k].rows.push(o); G[k].tot+=N(o.amount); G[k].paid+=N(o.paidAmount||0);
+    if(o.currency) G[k].cur = (o.currency||'CNY').toUpperCase();
     if(o.status!=='已完成') G[k].st=o.status;
     if(o.payStatus!=='已付款') G[k].pay=o.payStatus;
   });
   const vals = Object.values(G);
-  if(!vals.length) return '<tr><td class="empty" colspan="10">暂无订单</td></tr>';
+  if(!vals.length) return '<tr><td class="empty" colspan="11">暂无订单</td></tr>';
   return vals.map(g => {
     const id=pfx+'_'+g.k.replace(/\W/g,'_'), open=OG.has(id), multi=g.rows.length>1;
     const mr=g.rows[0], ships=shipsFor(g.k), totalQty=g.rows.reduce((s,r)=>s+N(r.qty||0),0);
-    // [FIX #5] SKU = sku字段, 产品名称 = product字段
+    const sym = curSym(g.cur);
+    // SKU = sku字段(编码), 产品名称 = product字段(描述)
     const gtr=`<tr class="gr${open?' open':''}" onclick="tog('${id}')">
       <td class="nw"><span class="arr">▶</span><span class="ono">${H(g.k)}</span>${g.zoho?itag('Z','var(--purple)','var(--purple-bg)'):''}${multi?`<span style="font-size:12px;color:var(--t4);margin-left:8px">${g.rows.length}项</span>`:''}</td>
       <td>${bdg(g.src||'手动')}</td>
       <td class="nw fw7 cod" style="color:var(--blue)">${H(mr.sku||'-')}</td>
-      <td class="wrap" style="font-size:13.5px">${H(mr.product||'-')}</td>
-      <td>${totalQty||'-'}</td>
-      <td class="amt fw8" style="color:var(--amt-total)">${mr.currency==='USD'?'$':'¥'}${F(g.tot)}</td>
-      <td class="amt" style="color:var(--amt-paid)">${mr.currency==='USD'?'$':'¥'}${F(g.paid)}</td>
-      <td class="amt fw7" style="color:var(--amt-due)">${mr.currency==='USD'?'$':'¥'}${F(g.tot-g.paid)}</td>
+      <td class="wrap" style="font-size:13px">${H(mr.product||mr.productName||'-')}</td>
+      <td style="color:var(--t3)">${totalQty||'-'}</td>
+      <td class="amt" style="color:var(--t3);font-size:12px">${mr.unitPrice?sym+F(mr.unitPrice):'-'}</td>
+      <td class="amt fw8" style="color:var(--amt-total)">${sym}${F(g.tot)}</td>
+      <td class="amt" style="color:var(--amt-paid)">${sym}${F(g.paid)}</td>
+      <td class="amt fw7" style="color:var(--amt-due)">${sym}${F(g.tot-g.paid)}</td>
       <td>${bdg(g.st||'-')}</td><td>${bdg(g.pay||'-')}</td></tr>`;
     let det='';
     if(open){
-      det+=g.rows.map(r=>`<tr class="dr">
+      det+=g.rows.map(r=>{const s2=curSym((r.currency||'CNY').toUpperCase());return`<tr class="dr">
         <td colspan="2"></td>
         <td class="cod fw7" style="color:var(--blue)">${H(r.sku||'-')}</td>
-        <td class="wrap">${H(r.product||'-')}</td>
+        <td class="wrap">${H(r.product||r.productName||'-')}</td>
         <td>${N(r.qty)||'-'}</td>
-        <td class="amt" style="color:var(--amt-total)">${r.currency==='USD'?'$':'¥'}${F(r.amount)}</td>
-        <td class="amt" style="color:var(--amt-paid)">${r.currency==='USD'?'$':'¥'}${F(r.paidAmount||0)}</td>
-        <td class="amt" style="color:var(--amt-due)">${r.currency==='USD'?'$':'¥'}${F(N(r.amount)-N(r.paidAmount||0))}</td>
-        <td>${bdg(r.status||'-')}</td><td>${bdg(r.payStatus||'-')}</td></tr>`).join('');
+        <td class="amt" style="color:var(--t3);font-size:12px">${r.unitPrice?s2+F(r.unitPrice):'-'}</td>
+        <td class="amt" style="color:var(--amt-total)">${s2}${F(r.amount)}</td>
+        <td class="amt" style="color:var(--amt-paid)">${s2}${F(r.paidAmount||0)}</td>
+        <td class="amt" style="color:var(--amt-due)">${s2}${F(N(r.amount)-N(r.paidAmount||0))}</td>
+        <td>${bdg(r.status||'-')}</td><td>${bdg(r.payStatus||'-')}</td></tr>`}).join('');
       if(ships.length){
-        det+=`<tr class="ship-lbl"><td colspan="10"><span style="font-size:11px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.5px">📦 出货记录</span></td></tr>`;
+        det+=`<tr class="ship-lbl"><td colspan="11"><span style="font-size:11px;font-weight:700;color:var(--t4);text-transform:uppercase;letter-spacing:.5px">📦 出货记录</span></td></tr>`;
         det+=ships.map(s=>`<tr class="ship-row">
           <td class="cod nw">${H(s.date||'-')}</td>
           <td>${bdg(s.direction||'-')}</td>
           <td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td>
           <td>${H(s.product||'-')}</td>
           <td>${H(s.qty||'-')}</td>
+          <td></td>
           <td colspan="2"><span class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</span></td>
           <td colspan="3" class="wrap" style="color:var(--t3)">${H(s.notes||'-')}</td></tr>`).join('');
       }
@@ -395,30 +476,32 @@ function bTable(orders, pfx) {
   const G = {};
   orders.forEach(o => {
     const k=String(o.orderNo||o._id||'—');
-    if(!G[k]) G[k]={k,rows:[],tot:0,paid:0,cust:o.customer,src:o.source,pay:o.payStatus,inv:o.invoiceStatus,st:o.status,ot:o.orderType,zoho:o.zohoId};
+    if(!G[k]) G[k]={k,rows:[],tot:0,paid:0,cust:o.customer,src:o.source,pay:o.payStatus,inv:o.invoiceStatus,st:o.status,ot:o.orderType,zoho:o.zohoId,cur:'CNY'};
     G[k].rows.push(o); G[k].tot+=N(o.amount); G[k].paid+=N(o.paidAmount||0);
+    if(o.currency) G[k].cur=(o.currency||'CNY').toUpperCase();
     if(o.payStatus!=='已付款') G[k].pay=o.payStatus;
   });
   const vals=Object.values(G);
-  if(!vals.length) return '<tr><td class="empty" colspan="11">暂无订单</td></tr>';
+  if(!vals.length) return '<tr><td class="empty" colspan="12">暂无订单</td></tr>';
   return vals.map(g => {
     const id=pfx+'_'+g.k.replace(/\W/g,'_'), open=OG.has(id), multi=g.rows.length>1;
-    const mr=g.rows[0], ships=shipsFor(g.k);
-    // [FIX #5] SKU = sku字段, 产品名称 = product字段
+    const mr=g.rows[0], ships=shipsFor(g.k), sym=curSym(g.cur);
     const gtr=`<tr class="gr${open?' open':''}" onclick="tog('${id}')">
       <td class="nw"><span class="arr">▶</span><span class="ono">${H(g.k)}</span>${g.ot==='月度报告'?itag('MSR','var(--teal)','var(--teal-bg)'):''}${g.zoho?itag('Z','var(--purple)','var(--purple-bg)'):''}${multi?`<span style="font-size:12px;color:var(--t4);margin-left:8px">${g.rows.length}项</span>`:''}</td>
-      <td>${bdg(g.ot||'普通订单')}</td><td>${bdg(g.src||'手动')}</td>
+      <td>${bdg(g.src||'手动')}</td>
       <td class="nw fw6">${H(g.cust||'-')}</td>
       <td class="nw cod fw7" style="color:var(--blue)">${H(mr.sku||'-')}</td>
-      <td class="wrap" style="color:var(--t3);font-size:13.5px">${H(mr.product||mr.reportPeriod||'-')}</td>
-      <td class="amt fw8" style="color:var(--amt-total)">${mr.currency==='USD'?'$':'¥'}${F(g.tot)}</td>
-      <td class="amt" style="color:var(--amt-paid)">${mr.currency==='USD'?'$':'¥'}${F(g.paid)}</td>
-      <td class="amt fw7" style="color:var(--amt-due)">${mr.currency==='USD'?'$':'¥'}${F(g.tot-g.paid)}</td>
+      <td class="wrap" style="color:var(--t3);font-size:13px">${H(mr.product||mr.productName||mr.reportPeriod||'-')}</td>
+      <td style="color:var(--t3)">${g.rows.reduce((s,r)=>s+N(r.qty||0),0)||'-'}</td>
+      <td class="amt" style="color:var(--t3);font-size:12px">${mr.unitPrice?sym+F(mr.unitPrice):'-'}</td>
+      <td class="amt fw8" style="color:var(--amt-total)">${sym}${F(g.tot)}</td>
+      <td class="amt" style="color:var(--amt-paid)">${sym}${F(g.paid)}</td>
+      <td class="amt fw7" style="color:var(--amt-due)">${sym}${F(g.tot-g.paid)}</td>
       <td>${bdg(g.pay||'-')}</td><td>${bdg(g.inv||'-')}</td></tr>`;
     let det='';
     if(open){
-      if(multi) det+=g.rows.map(r=>`<tr class="dr"><td colspan="3"></td><td></td><td class="cod fw7" style="color:var(--blue)">${H(r.sku||'-')}</td><td class="wrap">${H(r.product||'-')}</td><td class="amt" style="color:var(--amt-total)">${r.currency==='USD'?'$':'¥'}${F(r.amount)}</td><td class="amt" style="color:var(--amt-paid)">${r.currency==='USD'?'$':'¥'}${F(r.paidAmount||0)}</td><td class="amt" style="color:var(--amt-due)">${r.currency==='USD'?'$':'¥'}${F(N(r.amount)-N(r.paidAmount||0))}</td><td>${bdg(r.payStatus||'-')}</td><td>${bdg(r.invoiceStatus||'-')}</td></tr>`).join('');
-      if(ships.length){ det+=`<tr class="ship-lbl"><td colspan="11"><span style="font-size:11px;font-weight:700;color:var(--t4)">📦 出货记录</span></td></tr>`; det+=ships.map(s=>`<tr class="ship-row"><td class="cod nw">${H(s.date||'-')}</td><td>${bdg(s.direction||'-')}</td><td></td><td></td><td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td><td>${H(s.product||'-')}</td><td colspan="2"><span class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</span></td><td>${H(s.qty||'-')}</td><td colspan="2" class="wrap" style="color:var(--t3)">${H(s.notes||'-')}</td></tr>`).join(''); }
+      if(multi) det+=g.rows.map(r=>{const s2=curSym((r.currency||'CNY').toUpperCase());return`<tr class="dr"><td colspan="2"></td><td></td><td class="cod fw7" style="color:var(--blue)">${H(r.sku||'-')}</td><td class="wrap">${H(r.product||r.productName||'-')}</td><td>${N(r.qty)||'-'}</td><td class="amt" style="color:var(--t3);font-size:12px">${r.unitPrice?s2+F(r.unitPrice):'-'}</td><td class="amt" style="color:var(--amt-total)">${s2}${F(r.amount)}</td><td class="amt" style="color:var(--amt-paid)">${s2}${F(r.paidAmount||0)}</td><td class="amt" style="color:var(--amt-due)">${s2}${F(N(r.amount)-N(r.paidAmount||0))}</td><td>${bdg(r.payStatus||'-')}</td><td>${bdg(r.invoiceStatus||'-')}</td></tr>`}).join('');
+      if(ships.length){ det+=`<tr class="ship-lbl"><td colspan="12"><span style="font-size:11px;font-weight:700;color:var(--t4)">📦 出货记录</span></td></tr>`; det+=ships.map(s=>`<tr class="ship-row"><td class="cod nw">${H(s.date||'-')}</td><td>${bdg(s.direction||'-')}</td><td></td><td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td><td>${H(s.product||'-')}</td><td>${H(s.qty||'-')}</td><td></td><td colspan="2"><span class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</span></td><td colspan="3" class="wrap" style="color:var(--t3)">${H(s.notes||'-')}</td></tr>`).join(''); }
     }
     return gtr+det;
   }).join('');
@@ -456,9 +539,10 @@ const FM = {
     {f:"_sku",t:"SKU",fs:"SKU"},
     {f:"items",t:"产品名称",fs:"产品名称"},
     {f:"totalQty",t:"数量",fs:"数量"},
+    {f:"_unitPrice",t:"单价",fs:"单价"},
     {f:"currency",t:"币种",fs:"币种"},
     {f:"total",t:"订单金额",fs:"订单金额"},
-    {f:"paidAmount",t:"已付金额",fs:"已付金额"},  // [FIX #1]
+    {f:"paidAmount",t:"已付金额",fs:"已付金额"},
     {f:"payment",t:"备注",fs:"备注"},
     {f:"_auto",t:"来源",fs:"来源",v:"供应商制单"}
   ],
@@ -469,6 +553,7 @@ const FM = {
     {f:"_sku",t:"SKU",fs:"SKU"},
     {f:"items",t:"产品名称",fs:"产品名称"},
     {f:"totalQty",t:"数量",fs:"数量"},
+    {f:"_unitPrice",t:"单价",fs:"单价"},
     {f:"currency",t:"币种",fs:"币种"},
     {f:"total",t:"订单金额",fs:"订单金额"},
     {f:"_auto",t:"来源",fs:"来源",v:"客户下单"}
@@ -481,6 +566,7 @@ const FM = {
     {f:"_sku",t:"SKU",fs:"SKU"},
     {f:"items",t:"产品名称",fs:"产品名称"},
     {f:"totalQty",t:"数量",fs:"数量"},
+    {f:"_unitPrice",t:"单价",fs:"单价"},
     {f:"delivery",t:"物流单号",fs:"物流单号"},
     {f:"notes",t:"备注",fs:"备注"}
   ],
@@ -492,6 +578,7 @@ const FM = {
     {f:"_sku",t:"SKU",fs:"SKU"},
     {f:"items",t:"产品名称",fs:"产品名称"},
     {f:"totalQty",t:"数量",fs:"数量"},
+    {f:"_unitPrice",t:"单价",fs:"单价"},
     {f:"delivery",t:"物流单号",fs:"物流单号"},
     {f:"notes",t:"备注",fs:"备注"}
   ],
@@ -529,10 +616,13 @@ function doMap(key, data) {
   const m = {};
   FM[key].forEach(f => {
     if (f.f==='_auto') m[f.t] = f.v;
-    // [FIX #5] _sku → 取items第一个的item/name字段作SKU（或header里的docNo）
-    else if (f.f==='_sku' && data.items?.length) m[f.t] = data.items.map(i=>i.item||i.name||'').filter(Boolean).join(', ');
+    // [FIX #3] _sku → 用 it.sku 字段（SKU编码），不是产品名
+    else if (f.f==='_sku' && data.items?.length) m[f.t] = data.items.map(i=>i.sku||'').filter(Boolean).join(', ');
+    // items → 产品名称（完整描述）
     else if (f.f==='items' && data.items) m[f.t] = data.items.map(i=>i.item||i.name||'').filter(Boolean).join(', ');
     else if (f.f==='totalQty' && data.items) m[f.t] = data.items.reduce((s,i)=>s+(parseFloat(i.qty)||0), 0);
+    // _unitPrice → 单品单价（多品时取第一个）
+    else if (f.f==='_unitPrice' && data.items?.length) m[f.t] = data.items[0]?.unitPrice || data.items[0]?.price || '';
     else if (data.header?.[f.f] !== undefined) m[f.t] = data.header[f.f];
     else if (data[f.f] !== undefined) m[f.t] = data[f.f];
     else m[f.t] = '';
@@ -561,9 +651,9 @@ function buildFields(key, data) {
     const v = data[f.t];
     if (v === undefined || v === '') return;
     // 数字类字段
-    if (f.fs.includes('金额') || f.fs === '数量' || f.fs === '垫付金额' || f.fs === '开票金额' || f.fs === '已付金额') {
-      const n = parseFloat(String(v).replace(/[,¥$]/g, ''));
-      if (!isNaN(n)) fields[f.fs] = n;
+    if (f.fs.includes('金额') || f.fs === '数量' || f.fs === '垫付金额' || f.fs === '开票金额' || f.fs === '已付金额' || f.fs === '单价') {
+      const n = parseFloat(String(v).replace(/[,¥$€£]/g, ''));
+      if (!isNaN(n) && n > 0) fields[f.fs] = n;
     } else {
       fields[f.fs] = String(v);
     }
@@ -605,10 +695,10 @@ async function runSaveToFeishu() {
     if (isShipment && hasMultiItems) {
       const records = res.items.map(it => {
         const row = { ...mp };
-        // [FIX #5] sku字段→SKU列, product/item字段→产品名称列
-        row['SKU'] = it.item || it.name || it.sku || '';
-        row['产品名称'] = it.item || it.name || '';
+        row['SKU'] = it.sku || '';                          // SKU编码
+        row['产品名称'] = it.item || it.name || '';          // 产品名称/描述
         row['数量'] = it.qty || '';
+        row['单价'] = it.unitPrice || it.price || '';
         return buildFields(key, row);
       });
       const cr = await (await fetch(ou('/feishu'), {
@@ -621,16 +711,15 @@ async function runSaveToFeishu() {
         doSync();
       } else SC.msg={fail:(cr.msg||'失败')+(cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):'')};
 
-    // 生产/B端 多产品分行写入 (已有逻辑，加 [FIX #5] sku/product 字段修正)
+    // 生产/B端 多产品分行写入
     } else if ((isProd||isB2b) && hasMultiItems) {
       const records = res.items.map(it => {
         const row = { ...mp };
-        // [FIX #5] sku → SKU列; item/name → 产品名称列
-        row['SKU'] = it.item || it.name || it.sku || '';
-        row['产品名称'] = it.item || it.name || '';
+        row['SKU'] = it.sku || '';                          // SKU编码
+        row['产品名称'] = it.item || it.name || '';          // 产品描述
         row['数量'] = it.qty || '';
+        row['单价'] = it.unitPrice || it.price || '';
         row['订单金额'] = it.subtotal || it.amount || '';
-        // [FIX #1] 已付金额保留 header 值，不按行拆
         return buildFields(key, row);
       });
       const cr = await (await fetch(ou('/feishu'), {
@@ -646,11 +735,15 @@ async function runSaveToFeishu() {
     // 单行写入
     } else {
       const fields = buildFields(key, mp);
-      // [FIX #5] 确保 SKU/产品名称 用对字段
-      if (res?.items?.length===1) {
+      // 单个产品时也确保 SKU/产品名称/单价 字段来自 items[0]
+      if (res?.items?.length >= 1) {
         const it = res.items[0];
-        if (!fields['SKU']) fields['SKU'] = it.item || it.name || it.sku || '';
-        if (!fields['产品名称']) fields['产品名称'] = it.item || it.name || '';
+        if (!fields['SKU'] && it.sku) fields['SKU'] = it.sku;
+        if (!fields['产品名称'] && (it.item||it.name)) fields['产品名称'] = it.item || it.name;
+        if (!fields['单价'] && (it.unitPrice||it.price)) {
+          const n = parseFloat(it.unitPrice || it.price);
+          if (!isNaN(n) && n>0) fields['单价'] = n;
+        }
       }
       const cr = await (await fetch(ou('/feishu'), {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -713,46 +806,55 @@ function renderNav(){document.getElementById('nav').innerHTML=TABS.map(t=>`<butt
 function render(){clearErr();const pages={overview:pgOv,scanner:pgScanner,rnd:pgRnD,us:pgUS,orders:pgOrd,b2b:pgB2B,settings:pgSet};document.getElementById('pg').innerHTML=(pages[tab]||pgOv)();if(tab==='scanner')bindScannerEvents();}
 
 /* ══════════════════════════════════════════════
-   PAGE: OVERVIEW — [FIX #3] 按币种分开显示金额
+   PAGE: OVERVIEW — 核心指标：待收/待付/垫付/生产/履约
 ══════════════════════════════════════════════ */
 function pgOv(){
-  const tAdv=DB.advances.reduce((s,p)=>s+N(p.amount),0), unret=DB.advances.filter(p=>p.status!=='已还清').reduce((s,p)=>s+(N(p.amount)-N(p.returned)),0);
-  const actP=DB.productionOrders.filter(o=>o.status!=='已完成'&&o.status!=='已取消');
-  const bAct=DB.bOrders.filter(o=>o.status!=='已完结'&&o.status!=='已取消').length;
-  const pendAdv=DB.advances.filter(p=>p.status!=='已还清');
-
-  // [FIX #3] 按币种统计
-  const prodAmtByCur = sumByCurrency(DB.productionOrders, 'amount');
-  const prodPaidByCur = sumByCurrency(DB.productionOrders, 'paidAmount');
-  const bAmtByCur = sumByCurrency(DB.bOrders, 'amount');
-  const bPaidByCur = sumByCurrency(DB.bOrders, 'paidAmount');
-  // 计算每个币种的待付
+  // 生产订单：待付款
+  const prodActive = DB.productionOrders.filter(o=>o.status!=='已完成'&&o.status!=='已取消');
   const prodDueByCur = {};
-  Object.keys({...prodAmtByCur,...prodPaidByCur}).forEach(cur => {
-    prodDueByCur[cur] = (prodAmtByCur[cur]||0) - (prodPaidByCur[cur]||0);
-  });
-  const bDueByCur = {};
-  Object.keys({...bAmtByCur,...bPaidByCur}).forEach(cur => {
-    bDueByCur[cur] = (bAmtByCur[cur]||0) - (bPaidByCur[cur]||0);
+  DB.productionOrders.forEach(o=>{
+    const cur=(o.currency||o['币种']||'CNY').toUpperCase();
+    const due = N(o.amount) - N(o.paidAmount||0);
+    if(due>0) prodDueByCur[cur]=(prodDueByCur[cur]||0)+due;
   });
 
-  // 垫付按币种
-  const advByCur = sumByCurrency(DB.advances, 'amount');
+  // B端订单：待收款、待履约
+  const bActive = DB.bOrders.filter(o=>o.status!=='已完结'&&o.status!=='已取消');
+  const bDueByCur = {};
+  DB.bOrders.forEach(o=>{
+    const cur=(o.currency||o['币种']||'CNY').toUpperCase();
+    const due = N(o.amount) - N(o.paidAmount||0);
+    if(due>0) bDueByCur[cur]=(bDueByCur[cur]||0)+due;
+  });
+
+  // 垫付：未还金额
   const advUnretByCur = {};
   DB.advances.filter(p=>p.status!=='已还清').forEach(p=>{
-    const cur=(p.currency||'CNY').toUpperCase();
-    advUnretByCur[cur]=(advUnretByCur[cur]||0)+(N(p.amount)-N(p.returned));
+    const cur=(p.currency||p['币种']||'CNY').toUpperCase();
+    const due = N(p.amount)-N(p.returned||0);
+    if(due>0) advUnretByCur[cur]=(advUnretByCur[cur]||0)+due;
   });
 
+  // 待履约 B端订单
+  const pendAdv = DB.advances.filter(p=>p.status!=='已还清');
+
   return `
-  <div class="g4">
-    ${kpiCur('未还垫付', advUnretByCur, '总垫付 ¥'+F(tAdv), 'var(--red)')}
-    ${kpiCur('B端待收款', bDueByCur, '活跃订单 '+bAct+'条', 'var(--orange)')}
-    ${kpi('进行中生产', actP.length+'', '共'+DB.productionOrders.length+'条', 'var(--blue)')}
-    ${kpiCur('生产待付', prodDueByCur, '', 'var(--amt-due)')}
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">
+    ${kpiCur('💰 B端待收款', bDueByCur, bActive.length+'条活跃', 'var(--amt-due)')}
+    ${kpiCur('📤 生产待付款', prodDueByCur, prodActive.length+'条进行中', 'var(--orange)')}
+    ${kpiCur('⚠️ 垫付未还', advUnretByCur, DB.advances.filter(p=>p.status!=='已还清').length+'笔', 'var(--red)')}
+    ${kpi('🏭 进行中生产', prodActive.length+'', '共'+DB.productionOrders.length+'条订单', 'var(--blue)')}
+    ${kpi('🤝 待履约B端', bActive.length+'', '共'+DB.bOrders.length+'条订单', 'var(--purple)')}
   </div>
-  <div class="sec"><div class="sec-hdr"><span class="sec-title">⚠️ 美国垫付未还</span><button class="sec-more" onclick="setTab('us')">查看全部 →</button></div><div class="card">${pendAdv.length===0?'<div style="padding:22px;text-align:center;color:var(--t4)">✓ 暂无</div>':'<div class="tw"><table><thead><tr><th>日期</th><th>用途</th><th>币种</th><th>垫付金额</th><th>已还</th><th>未还</th><th>状态</th></tr></thead><tbody>'+pendAdv.map(p=>{const s=p.currency==='USD'?'$':'¥';return`<tr><td class="cod nw">${H(p.date||'-')}</td><td class="wrap">${H(p.purpose||'-')}</td><td>${H(p.currency||'CNY')}</td><td class="amt fw7" style="color:var(--red)">${s}${F(p.amount)}</td><td class="amt" style="color:var(--green)">${s}${F(p.returned||0)}</td><td class="amt fw8" style="color:var(--red)">${s}${F(N(p.amount)-N(p.returned))}</td><td>${bdg(p.status)}</td></tr>`}).join('')+'</tbody></table></div>'}</div></div>
-  <div class="sec"><div class="sec-hdr"><span class="sec-title">📦 进行中生产订单</span><button class="sec-more" onclick="setTab('orders')">查看全部 →</button></div><div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU</th><th>产品名称</th><th>数量</th><th>总金额</th><th>已付</th><th>待付</th><th>状态</th><th>付款</th></tr></thead><tbody>${prodTable(actP,'ov')}</tbody></table></div></div></div>`;
+
+  <div class="sec"><div class="sec-hdr"><span class="sec-title">⚠️ 垫付未还</span><button class="sec-more" onclick="setTab('us')">查看全部 →</button></div>
+  <div class="card">${pendAdv.length===0?'<div style="padding:22px;text-align:center;color:var(--t4)">✓ 暂无未还垫付</div>':'<div class="tw"><table><thead><tr><th>日期</th><th>用途</th><th>币种</th><th>垫付金额</th><th>已还</th><th>未还</th><th>状态</th></tr></thead><tbody>'+pendAdv.map(p=>{const s=curSym((p.currency||p['币种']||'CNY').toUpperCase());return`<tr><td class="cod nw">${H(p.date||'-')}</td><td class="wrap">${H(p.purpose||p['用途说明']||'-')}</td><td><span style="font-size:11px;padding:1px 6px;border-radius:3px;background:rgba(0,0,0,.07);color:var(--t3);font-weight:700">${H(p.currency||p['币种']||'CNY')}</span></td><td class="amt fw7" style="color:var(--red)">${s}${F(p.amount)}</td><td class="amt" style="color:var(--green)">${s}${F(p.returned||0)}</td><td class="amt fw8" style="color:var(--red)">${s}${F(N(p.amount)-N(p.returned||0))}</td><td>${bdg(p.status)}</td></tr>`}).join('')+'</tbody></table></div>'}</div></div>
+
+  <div class="sec"><div class="sec-hdr"><span class="sec-title">🏭 进行中生产订单</span><button class="sec-more" onclick="setTab('orders')">查看全部 →</button></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU</th><th>产品名称</th><th>数量</th><th>单价</th><th>总金额</th><th>已付</th><th>待付</th><th>状态</th><th>付款</th></tr></thead><tbody>${prodTable(prodActive,'ov')}</tbody></table></div></div></div>
+
+  <div class="sec"><div class="sec-hdr"><span class="sec-title">🤝 待履约B端订单</span><button class="sec-more" onclick="setTab('b2b')">查看全部 →</button></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>客户</th><th>SKU</th><th>产品名称</th><th>数量</th><th>单价</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bTable(bActive,'ov2')}</tbody></table></div></div></div>`;
 }
 
 /* PAGE: SCANNER */
@@ -801,30 +903,49 @@ function pgUS(){
   <div class="sec"><div class="card"><div class="stabs"><button class="stab${usT==='adv'?' on':''}" onclick="usT='adv';render()">💰 垫付明细</button><button class="stab${usT==='ship'?' on':''}" onclick="usT='ship';render()">📦 出货记录</button></div><div>${usT==='adv'?`<div class="tw"><table><thead><tr><th>日期</th><th>用途</th><th>币种</th><th>垫付金额</th><th>已还</th><th>未还</th><th>状态</th><th>备注</th></tr></thead><tbody>${DB.advances.length===0?'<tr><td class="empty" colspan="8">暂无</td></tr>':DB.advances.map(p=>{const s=p.currency==='USD'?'$':'¥';return`<tr><td class="cod nw">${H(p.date||'-')}</td><td class="wrap">${H(p.purpose||'-')}</td><td><span class="cur-${p.currency==='USD'?'usd':'cny'}">${H(p.currency||'CNY')}</span></td><td class="amt fw8" style="color:var(--red)">${s}${F(p.amount)}</td><td class="amt" style="color:var(--green)">${s}${F(p.returned||0)}</td><td class="amt fw8" style="color:var(--red)">${s}${F(N(p.amount)-N(p.returned))}</td><td>${bdg(p.status)}</td><td class="wrap" style="color:var(--t3)">${H(p.notes||'-')}</td></tr>`}).join('')}</tbody></table></div>`:`<div class="tw"><table><thead><tr><th>日期</th><th>方向</th><th>关联订单</th><th>SKU</th><th>产品名称</th><th>数量</th><th>物流单号</th></tr></thead><tbody>${DB.shipments.length===0?'<tr><td class="empty" colspan="7">暂无</td></tr>':DB.shipments.map(s=>`<tr><td class="cod nw">${H(s.date||'-')}</td><td>${bdg(s.direction||'-')}</td><td class="cod nw">${H(s.relatedOrder||'-')}</td><td class="cod fw7" style="color:var(--blue)">${H(s.sku||'-')}</td><td>${H(s.product||'-')}</td><td>${H(s.qty||'-')}</td><td class="cod" style="color:var(--purple)">${H(s.tracking||'-')}</td></tr>`).join('')}</tbody></table></div>`}</div></div></div>`;
 }
 
-/* PAGE: ORDERS — [FIX #3] 金额按币种区分 */
+/* PAGE: ORDERS */
 function pgOrd(){
-  const amtByCur=sumByCurrency(DB.productionOrders,'amount');
-  const paidByCur=sumByCurrency(DB.productionOrders,'paidAmount');
+  const amtByCur={}; const paidByCur={};
+  DB.productionOrders.forEach(o=>{
+    const cur=(o.currency||o['币种']||'CNY').toUpperCase();
+    amtByCur[cur]=(amtByCur[cur]||0)+N(o.amount);
+    paidByCur[cur]=(paidByCur[cur]||0)+N(o.paidAmount||0);
+  });
   const dueByCur={};
-  Object.keys({...amtByCur,...paidByCur}).forEach(cur=>{dueByCur[cur]=(amtByCur[cur]||0)-(paidByCur[cur]||0)});
-  const fil=ordF==='all'?DB.productionOrders:DB.productionOrders.filter(o=>(o.source||'供应商制单')===ordF);
-  return `<div class="phdr"><div class="pt">📦 下单 · 出货 · 付款跟进</div><div class="ps">点击订单行展开明细</div></div>
+  Object.keys({...amtByCur,...paidByCur}).forEach(cur=>{const d=(amtByCur[cur]||0)-(paidByCur[cur]||0);if(d>0)dueByCur[cur]=d});
+  // [FIX #4] 只保留三类：供应商制单/我司出单/客户下单
+  const VALID_SRC = ['供应商制单','我司出单','客户下单'];
+  const fil = ordF==='all'
+    ? DB.productionOrders.filter(o=>VALID_SRC.includes(o.source||o['来源']))
+    : DB.productionOrders.filter(o=>(o.source||o['来源'])===ordF);
+  return `<div class="phdr"><div class="pt">📦 下单 · 出货 · 付款跟进</div><div class="ps">点击订单行展开明细与出货记录</div></div>
   <div class="g3">
     ${kpiCur('订单总额', amtByCur, '', 'var(--amt-total)')}
     ${kpiCur('已付', paidByCur, '', 'var(--amt-paid)')}
     ${kpiCur('待付', dueByCur, '', 'var(--amt-due)')}
   </div>
-  <div class="sec"><div class="pills">${['all','供应商制单','我司出单','客户下单'].map(f=>`<button class="pill${ordF===f?' on':''}" onclick="ordF='${f}';render()">${f==='all'?'全部':f}</button>`).join('')}</div>
-  <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU</th><th>产品名称</th><th>数量</th><th>总金额</th><th>已付</th><th>待付</th><th>状态</th><th>付款</th></tr></thead><tbody>${prodTable(fil,'po')}</tbody></table></div></div></div>`;
+  <div class="sec">
+    <div class="pills">
+      <button class="pill${ordF==='all'?' on':''}" onclick="ordF='all';render()">全部</button>
+      <button class="pill${ordF==='供应商制单'?' on':''}" onclick="ordF='供应商制单';render()">供应商制单</button>
+      <button class="pill${ordF==='我司出单'?' on':''}" onclick="ordF='我司出单';render()">我司出单</button>
+      <button class="pill${ordF==='客户下单'?' on':''}" onclick="ordF='客户下单';render()">客户下单</button>
+    </div>
+    <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>SKU</th><th>产品名称</th><th>数量</th><th>单价</th><th>总金额</th><th>已付</th><th>待付</th><th>状态</th><th>付款</th></tr></thead><tbody>${prodTable(fil,'po')}</tbody></table></div></div>
+  </div>`;
 }
 
-/* PAGE: B2B — [FIX #3] 金额按币种区分 */
+/* PAGE: B2B */
 function pgB2B(){
-  const amtByCur=sumByCurrency(DB.bOrders,'amount');
-  const paidByCur=sumByCurrency(DB.bOrders,'paidAmount');
+  const amtByCur={}; const paidByCur={};
+  DB.bOrders.forEach(o=>{
+    const cur=(o.currency||o['币种']||'CNY').toUpperCase();
+    amtByCur[cur]=(amtByCur[cur]||0)+N(o.amount);
+    paidByCur[cur]=(paidByCur[cur]||0)+N(o.paidAmount||0);
+  });
   const dueByCur={};
-  Object.keys({...amtByCur,...paidByCur}).forEach(cur=>{dueByCur[cur]=(amtByCur[cur]||0)-(paidByCur[cur]||0)});
-  const inv=DB.invoices.reduce((s,i)=>s+N(i.amount),0);
+  Object.keys({...amtByCur,...paidByCur}).forEach(cur=>{const d=(amtByCur[cur]||0)-(paidByCur[cur]||0);if(d>0)dueByCur[cur]=d});
+  const inv=DB.invoices.reduce((s,i)=>s+N(i.amount||i['开票金额']||0),0);
   return `<div class="phdr"><div class="pt">🤝 B端客户履约</div></div>
   <div class="g4">
     ${kpiCur('订单总额', amtByCur, '', 'var(--amt-total)')}
@@ -832,7 +953,7 @@ function pgB2B(){
     ${kpiCur('待收', dueByCur, '', 'var(--amt-due)')}
     ${kpi('已开票','¥'+F(inv),'','var(--teal)')}
   </div>
-  <div class="sec"><div class="card"><div class="stabs"><button class="stab${b2T==='ord'?' on':''}" onclick="b2T='ord';render()">📋 B端订单</button><button class="stab${b2T==='inv'?' on':''}" onclick="b2T='inv';render()">🧾 开票记录</button></div><div>${b2T==='ord'?`<div class="tw"><table><thead><tr><th>订单号</th><th>类型</th><th>来源</th><th>客户</th><th>SKU</th><th>产品名称</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bTable(DB.bOrders,'bo')}</tbody></table></div>`:`<div class="tw"><table><thead><tr><th>发票号</th><th>客户</th><th>开票金额</th><th>币种</th><th>状态</th><th>备注</th></tr></thead><tbody>${DB.invoices.length===0?'<tr><td class="empty" colspan="6">暂无</td></tr>':DB.invoices.map(i=>`<tr><td class="cod fw8 nw" style="color:var(--blue)">${H(i.invoiceNo||'-')}</td><td class="fw6">${H(i.customer||'-')}</td><td class="amt fw8" style="color:var(--amt-total)">${i.currency==='USD'?'$':'¥'}${F(i.amount)}</td><td><span class="cur-${i.currency==='USD'?'usd':'cny'}">${H(i.currency||'CNY')}</span></td><td>${bdg(i.status)}</td><td class="wrap" style="color:var(--t3)">${H(i.notes||'-')}</td></tr>`).join('')}</tbody></table></div>`}</div></div></div>`;
+  <div class="sec"><div class="card"><div class="stabs"><button class="stab${b2T==='ord'?' on':''}" onclick="b2T='ord';render()">📋 B端订单</button><button class="stab${b2T==='inv'?' on':''}" onclick="b2T='inv';render()">🧾 开票记录</button></div><div>${b2T==='ord'?`<div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>客户</th><th>SKU</th><th>产品名称</th><th>数量</th><th>单价</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bTable(DB.bOrders,'bo')}</tbody></table></div>`:`<div class="tw"><table><thead><tr><th>发票号</th><th>客户</th><th>开票金额</th><th>币种</th><th>状态</th><th>备注</th></tr></thead><tbody>${DB.invoices.length===0?'<tr><td class="empty" colspan="6">暂无</td></tr>':DB.invoices.map(i=>{const sym=curSym((i.currency||i['币种']||'CNY').toUpperCase());return`<tr><td class="cod fw8 nw" style="color:var(--blue)">${H(i.invoiceNo||i['发票号']||'-')}</td><td class="fw6">${H(i.customer||i['客户名称']||'-')}</td><td class="amt fw8" style="color:var(--amt-total)">${sym}${F(i.amount||i['开票金额']||0)}</td><td><span style="font-size:11px;padding:1px 6px;border-radius:3px;background:rgba(0,0,0,.07);color:var(--t3);font-weight:700">${H(i.currency||i['币种']||'CNY')}</span></td><td>${bdg(i.status||i['开票状态'])}</td><td class="wrap" style="color:var(--t3)">${H(i.notes||'-')}</td></tr>`}).join('')}</tbody></table></div>`}</div></div></div>`;
 }
 
 /* ══════════════════════════════════════════════
