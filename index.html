@@ -667,8 +667,26 @@ function buildFields(key, data) {
 */
 async function runSaveToFeishu() {
   const key=SC.target, mp=SC.mapping; if(!key||!mp) return;
-  const ck=cfgKey(key), fs=cfg.fs||{}, aid=fs.aid, as=fs.as, at=fs.at, fc=fs[ck];
-  if(!aid||!as||!at||!fc?.tid){ SC.msg={fail:'请先在「⚙ 配置」页完成飞书连接'}; render(); return; }
+  // 写入只需要 Worker URL + tableId（Worker 自己用环境变量里的飞书凭证）
+  // tableId 从配置页读取，如果没配就用默认值
+  const ck=cfgKey(key);
+  const fs=cfg.fs||{};
+  const fc=fs[ck];
+  const workerUrl = cfg.dashboardUrl || cfg.ocrUrl || '';
+  if(!workerUrl){ SC.msg={fail:'请先在「⚙ 配置」页填写 Worker URL'}; render(); return; }
+
+  // tableId：配置页填了就用，没填用默认
+  const DEFAULT_TIDS = {
+    production:'tblyUdlkUkAGiJwo', b2b:'tbl1vDHZlSKGBeI7',
+    ship_in:'tbl5tQRwRLchLiL8', advance:'tbl7FGIDEtkZBid8', invoice:'tbl9EmtJeZ7enX5b'
+  };
+  const tid = fc?.tid || DEFAULT_TIDS[ck] || '';
+  if(!tid){ SC.msg={fail:'未找到表格ID，请在配置页填写'}; render(); return; }
+
+  const postFeishu = (body) => fetch(workerUrl.replace(/\/$/,'')+'/feishu', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ tableId: tid, ...body })
+  }).then(r=>r.json());
 
   const res=SC.result;
   const isShipment = key==='ship_in'||key==='ship_out';
@@ -676,16 +694,21 @@ async function runSaveToFeishu() {
   const isB2b = key==='b2b';
   const hasMultiItems = res?.items?.length>1;
 
-  // [FIX #4] 重复检测 (生产/B端/出货)
+  // 重复检测
   if (isProd || isB2b) {
     const orderNo = mp['订单编号'];
     if (orderNo) {
-      const dup = await checkDuplicate(key, orderNo);
-      if (dup) {
-        if (!confirm(`⚠️ 订单号「${orderNo}」在飞书中已存在！\n点击确定继续写入（会新增一条），点击取消放弃。`)) {
-          SC.msg={fail:`已跳过：订单号 ${orderNo} 已存在`}; render(); return;
+      try {
+        const dup = await fetch(workerUrl.replace(/\/$/,'')+'/feishu', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ tableId: tid, action:'search_order', orderNo })
+        }).then(r=>r.json());
+        if (dup.exists) {
+          if (!confirm(`⚠️ 订单号「${orderNo}」已存在！\n确定继续写入，取消放弃。`)) {
+            SC.msg={fail:`已跳过：${orderNo} 已存在`}; render(); return;
+          }
         }
-      }
+      } catch(e) { /* 检测失败则继续写入 */ }
     }
   }
 
@@ -701,10 +724,7 @@ async function runSaveToFeishu() {
         row['单价'] = it.unitPrice || it.price || '';
         return buildFields(key, row);
       });
-      const cr = await (await fetch(ou('/feishu'), {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,records})
-      })).json();
+      const cr = await postFeishu({ records });
       if(cr.code===0){
         SC.msg={ok:`出货 ${cr.data?.success_count||records.length} 行写入成功`};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:'batch'},...getHist()]);
@@ -722,10 +742,7 @@ async function runSaveToFeishu() {
         row['订单金额'] = it.subtotal || it.amount || '';
         return buildFields(key, row);
       });
-      const cr = await (await fetch(ou('/feishu'), {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,records})
-      })).json();
+      const cr = await postFeishu({ records });
       if(cr.code===0){
         SC.msg={ok:`${cr.data?.success_count||records.length}行写入成功`};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:'batch'},...getHist()]);
@@ -745,10 +762,7 @@ async function runSaveToFeishu() {
           if (!isNaN(n) && n>0) fields['单价'] = n;
         }
       }
-      const cr = await (await fetch(ou('/feishu'), {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({appId:aid,appSecret:as,appToken:at,tableId:fc.tid,fields})
-      })).json();
+      const cr = await postFeishu({ fields });
       if(cr.code===0){
         SC.msg={ok:'写入成功 · '+cr.data?.record?.record_id};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:cr.data?.record?.record_id},...getHist()]);
