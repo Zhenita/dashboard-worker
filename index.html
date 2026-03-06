@@ -172,8 +172,8 @@ tbody tr:hover td{background:rgba(0,0,0,.015)}
 .tgt-icon{font-size:20px;margin-bottom:4px}
 .tgt-label{font-size:12px;font-weight:700;color:var(--t2)}
 .tgt-desc{font-size:11px;color:var(--t4);margin-top:2px}
-.map-row{display:grid;grid-template-columns:100px 1fr;gap:10px;margin-bottom:8px;align-items:center}
-.map-key{font-size:12px;font-weight:600;color:var(--t3)}
+.map-row{display:flex;flex-direction:row;gap:8px;margin-bottom:8px;align-items:center;width:100%}
+.map-key{font-size:12px;font-weight:600;color:var(--t3);min-width:80px;flex-shrink:0}
 .result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .result-cell{padding:8px 10px;background:var(--bg2);border-radius:var(--rx);border:1px solid var(--border)}
 .result-cell-k{font-size:10px;color:var(--t4);margin-bottom:2px}
@@ -628,13 +628,9 @@ function doMap(key, data) {
   data = data || SC.result; SC.target = key;
   if (!data || data.error) { SC.mapping = null; return; }
   const h = data.header || {};
-  // 根据单据类型决定"对方"是 from 还是 to
-  // 采购/收货/垫付: 对方是卖方 = from
-  // 销售/发货/B端: 对方是买方 = to
-  const buyerTypes = new Set(['b2b', 'ship_out', 'invoice']);
-  const counterparty = buyerTypes.has(key)
-    ? (h.to || h.supplier || h.from || '')   // 销售类：对方是买方(to)
-    : (h.from || h.supplier || h.to || '');  // 采购类：对方是卖方(from)
+  // 对方公司：优先用 supplier（AI已判断），fallback 展示 from/to 让用户选
+  // supplier 字段由 AI 根据单据类型判断（采购单=卖方/from，销售单=买方/to）
+  const counterparty = h.supplier || h.from || h.to || '';
   const m = {};
   FM[key].forEach(f => {
     if (f.f==='_auto') m[f.t] = f.v;
@@ -667,15 +663,19 @@ function autoDetect(d) {
 */
 function buildFields(key, data) {
   const fields = {};
+  // 飞书数字字段白名单（包含这些关键词才转数字，其余发字符串）
+  const NUM_FIELDS = new Set(['订单金额','垫付金额','开票金额','已付金额','已收金额','单价','数量','金额']);
   FM[key].forEach(f => {
     const v = data[f.t];
-    if (v === undefined || v === '') return;
-    // 数字类字段
-    if (f.fs.includes('金额') || f.fs === '数量' || f.fs === '垫付金额' || f.fs === '开票金额' || f.fs === '已付金额' || f.fs === '单价') {
-      const n = parseFloat(String(v).replace(/[,¥$€£]/g, ''));
-      if (!isNaN(n) && n > 0) fields[f.fs] = n;
+    if (v === undefined || v === '' || v === null) return;
+    const fsName = f.fs;
+    const isNum = NUM_FIELDS.has(fsName) || [...NUM_FIELDS].some(n => fsName.includes(n));
+    if (isNum) {
+      const n = parseFloat(String(v).replace(/[,¥$€£\s]/g, ''));
+      if (!isNaN(n)) fields[fsName] = n;
+      else if (String(v).trim()) fields[fsName] = String(v); // fallback 文本
     } else {
-      fields[f.fs] = String(v);
+      fields[fsName] = String(v);
     }
   });
   return fields;
@@ -749,7 +749,7 @@ async function runSaveToFeishu() {
         SC.msg={ok:`出货 ${cr.data?.success_count||records.length} 行写入成功`};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:'batch'},...getHist()]);
         doSync();
-      } else SC.msg={fail:`❌ ${cr.msg||'失败'}${cr.detail?.msg?' → '+cr.detail.msg:''}${cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):''}${cr.debug_sent?'\n发送字段:'+cr.debug_sent.join(','):''}` };
+      } else SC.msg={fail:fmtErr(cr)};
 
     // 生产/B端 多产品分行写入
     } else if ((isProd||isB2b) && hasMultiItems) {
@@ -767,18 +767,17 @@ async function runSaveToFeishu() {
         SC.msg={ok:`${cr.data?.success_count||records.length}行写入成功`};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:'batch'},...getHist()]);
         doSync();
-      } else SC.msg={fail:`❌ ${cr.msg||'失败'}${cr.detail?.msg?' → '+cr.detail.msg:''}${cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):''}` };
+      } else SC.msg={fail:fmtErr(cr)};
     // 单行写入
     } else {
       const fields = buildFields(key, mp);
-      // 单个产品时也确保 SKU/产品名称/单价 字段来自 items[0]
       if (res?.items?.length >= 1) {
         const it = res.items[0];
         if (!fields['SKU'] && it.sku) fields['SKU'] = it.sku;
         if (!fields['产品名称'] && (it.item||it.name)) fields['产品名称'] = it.item || it.name;
         if (!fields['单价'] && (it.unitPrice||it.price)) {
           const n = parseFloat(it.unitPrice || it.price);
-          if (!isNaN(n) && n>0) fields['单价'] = n;
+          if (!isNaN(n)) fields['单价'] = n;
         }
       }
       const cr = await postFeishu({ fields });
@@ -786,9 +785,20 @@ async function runSaveToFeishu() {
         SC.msg={ok:'写入成功 · '+cr.data?.record?.record_id};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:cr.data?.record?.record_id},...getHist()]);
         doSync();
-      } else SC.msg={fail:`❌ ${cr.msg||'失败'}${cr.detail?.msg?' → '+cr.detail.msg:''}${cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):''}${cr.debug_sent?'\n发送字段:'+cr.debug_sent.join(','):''}`};
+      } else SC.msg={fail:fmtErr(cr)};
     }
   } catch(e){SC.msg={fail:e.message};} SC.saving=false; render();
+}
+
+function fmtErr(cr) {
+  let msg = cr.msg || '失败';
+  const d = cr.detail || {};
+  if (d.msg && d.msg !== msg) msg += ' → ' + d.msg;
+  if (d.bad_fields?.length) msg += '\n❌ 字段名不存在: ' + d.bad_fields.join(', ');
+  if (d.real_fields?.length) msg += '\n飞书真实字段: ' + d.real_fields.join(' | ');
+  else if (cr.debug_fields?.length) msg += '\n飞书字段: ' + cr.debug_fields.join(' | ');
+  if (cr.debug_sent?.length) msg += '\n我们发的: ' + cr.debug_sent.join(', ');
+  return msg;
 }
 
 /* ══════════════════════════════════════════════
@@ -911,6 +921,30 @@ async function pingWorker() {
     }
   } catch(e) { if(el) el.innerHTML = '<span style="color:var(--red)">❌ 网络错误: ' + e.message + '</span>'; }
 }
+
+async function listFields(tableKey) {
+  const el = document.getElementById('fields-' + tableKey);
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = '⏳ 查询中...';
+  const base = (cfg.dashboardUrl || cfg.ocrUrl || '').replace(/\/$/,'');
+  if (!base) { el.textContent = '❌ 未配置 Worker URL'; return; }
+  const DEFAULT_TIDS = {
+    rnd:'tbl64Snllt6Foss9', production:'tblyUdlkUkAGiJwo', b2b:'tbl1vDHZlSKGBeI7',
+    ship_in:'tbl5tQRwRLchLiL8', advance:'tbl7FGIDEtkZBid8', invoice:'tbl9EmtJeZ7enX5b'
+  };
+  const tid = cfg.fs?.[tableKey]?.tid || DEFAULT_TIDS[tableKey] || '';
+  try {
+    const r = await fetch(base + '/feishu', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ tableId: tid, action: 'list_fields' })
+    }).then(r=>r.json());
+    const fields = r.data?.items || [];
+    if (fields.length === 0) { el.innerHTML = '❌ 无字段（' + JSON.stringify(r).substring(0,80) + '）'; return; }
+    const names = fields.map(f => '<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 7px;background:var(--bg);border:1px solid var(--border2);border-radius:4px">' + H(f.field_name) + '</span>');
+    el.innerHTML = '飞书字段名：' + names.join('');
+  } catch(e) { el.textContent = '❌ ' + e.message; }
+}
 function buildMappingRows(mp) {
   const PARTY_KEYS = new Set(['客户名称','供应商','对方名称']);
   const fromV = SC.result?.header?.from || '';
@@ -924,10 +958,10 @@ function buildMappingRows(mp) {
       if (toV)   btns.push('<button class="pill" style="font-size:11px;padding:2px 8px" onclick="setPartyField('+JSON.stringify(k)+','+JSON.stringify(toV)+')">↓ To: '+H(toV)+'</button>');
       hint = '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">'+btns.join('')+'</div>';
     }
-    return '<div class="map-row" style="flex-direction:column;align-items:flex-start;gap:4px">'
+    return '<div class="map-row" style="flex-direction:column;align-items:flex-start;gap:4px;width:100%">'
       + '<div style="display:flex;width:100%;align-items:center;gap:8px">'
-      + '<div class="map-key" style="flex-shrink:0">'+H(k)+'</div>'
-      + '<input class="fi fi-sm" style="flex:1" value="'+H(String(v))+'" onchange="SC.mapping['+JSON.stringify(k)+']=this.value">'
+      + '<div class="map-key">'+H(k)+'</div>'
+      + '<input class="fi fi-sm" style="flex:1;min-width:0" value="'+H(String(v))+'" onchange="SC.mapping['+JSON.stringify(k)+']=this.value">'
       + '</div>'+hint+'</div>';
   }).join('');
 }
@@ -1057,7 +1091,7 @@ function pgSet(){
       <div><label class="fl">App Secret</label><input class="fi" type="password" value="${H(fs.as||'')}" onchange="saveFsField('as',this.value)"></div>
     </div>
     <div style="margin-bottom:16px"><label class="fl">App Token（所有表共用）</label><input class="fi" value="${H(fs.at||'')}" onchange="saveFsField('at',this.value)" placeholder="从飞书URL /base/xxx 复制"></div>
-    ${FT.map(t=>`<div style="border-left:3px solid ${t.c};padding:10px 14px;margin-bottom:10px;border-radius:0 var(--rx) var(--rx) 0;background:var(--bg2)"><div style="font-size:13px;font-weight:700;margin-bottom:6px">${t.l}</div><label class="fl">Table ID</label><input class="fi fi-sm" value="${H(fs[t.k]?.tid||t.dt)}" onchange="saveFsTid('${t.k}',this.value)"></div>`).join('')}
+    ${FT.map(t=>`<div style="border-left:3px solid ${t.c};padding:10px 14px;margin-bottom:10px;border-radius:0 var(--rx) var(--rx) 0;background:var(--bg2)"><div style="font-size:13px;font-weight:700;margin-bottom:6px">${t.l}</div><div style="display:flex;gap:8px;align-items:center"><input class="fi fi-sm" style="flex:1" value="${H(fs[t.k]?.tid||t.dt)}" onchange="saveFsTid('${t.k}',this.value)"><button class="btn-sm" style="white-space:nowrap;background:var(--bg);border:1px solid var(--border2);border-radius:var(--rs);padding:4px 10px;font-size:12px;cursor:pointer" onclick="listFields('${t.k}')">🔍 查字段</button></div><div id="fields-${t.k}" style="margin-top:6px;font-size:11px;color:var(--t3);display:none"></div></div>`).join('')}
   </div>
   <div class="cfg-section">
     <div class="cfg-title">📊 数据状态</div>
