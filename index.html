@@ -309,6 +309,20 @@ function kpi(l,v,s,c){ return `<div class="kpi"><div class="kpi-l">${l}</div><di
    字段标准化 — 飞书返回中文字段名统一转英文
    兼容两种格式: {amount:100} 或 {'订单金额':100}
 ══════════════════════════════════════════════ */
+function normProduct(r) {
+  if (!r) return r;
+  return {
+    ...r,
+    sku:      r.sku      || r['SKU']      || r['产品编号'] || '',
+    name:     r.name     || r['产品名称'] || r['名称']     || '',
+    category: r.category || r['类别']     || r['产品类别'] || '',
+    stage:    r.stage    || r['阶段']     || r['研发阶段'] || '',
+    status:   r.status   || r['状态']     || r['研发状态'] || '',
+    supplier: r.supplier || r['供应商']   || '',
+    cost:     N(r.cost   ?? r['成本']     ?? r['单价']    ?? 0),
+    notes:    r.notes    || r['备注']     || '',
+  };
+}
 function normOrder(r) {
   if (!r) return r;
   return {
@@ -373,7 +387,7 @@ function normInvoice(r) {
 }
 function normDB(raw) {
   return {
-    products:         (raw.products         || []),
+    products:         (raw.products         || []).map(normProduct),
     productionOrders: (raw.productionOrders || []).map(normOrder),
     bOrders:          (raw.bOrders          || []).map(normOrder),
     advances:         (raw.advances         || []).map(normAdvance),
@@ -514,13 +528,13 @@ async function checkDuplicate(tableKey, orderNo) {
   if (!orderNo) return false;
   const fs = cfg.fs || {};
   const ck = tableKey === 'ship_out' ? 'ship_in' : tableKey;
-  const aid = fs.aid, as = fs.as, at = fs.at, fc = fs[ck];
-  if (!aid || !as || !at || !fc?.tid) return false; // 未配置则跳过检测
+  const workerBase = (cfg.dashboardUrl || cfg.ocrUrl || '').replace(/\/$/,'');
+  if (!workerBase || !fc?.tid) return false;
   try {
-    const tk = await (await fetch(ou('/feishu'), {
+    const tk = await (await fetch(workerBase+'/feishu', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appId: aid, appSecret: as, appToken: at, tableId: fc.tid, action: 'search_order', orderNo })
+      body: JSON.stringify({ tableId: fc.tid, action: 'search_order', orderNo })
     })).json();
     return tk.exists === true;
   } catch { return false; }
@@ -800,10 +814,11 @@ async function histSendFeishu(i){
   const btn=document.getElementById('hbtn-'+i), msgEl=document.getElementById('hmsg-'+i);
   if(btn)btn.disabled=true; if(msgEl)msgEl.innerHTML='<div class="notice warn" style="margin-top:8px">⏳ 发送中...</div>';
   const ck=x.t==='ship_out'?'ship_in':x.t, fs=cfg.fs||{}, fc=fs[ck];
-  if(!fs.aid||!fs.as||!fs.at||!fc?.tid){ if(msgEl)msgEl.innerHTML='<div class="notice fail" style="margin-top:8px">❌ 请先配置飞书</div>'; if(btn)btn.disabled=false; return; }
+  const workerBase=(cfg.dashboardUrl||cfg.ocrUrl||'').replace(/\/$/,'');
+  if(!workerBase||!fc?.tid){ if(msgEl)msgEl.innerHTML='<div class="notice fail" style="margin-top:8px">❌ 请先配置 Worker URL 和 表格ID</div>'; if(btn)btn.disabled=false; return; }
   try{
-    const fields={}; FM[x.t].forEach(f=>{const v=x.f?.[f.t];if(v!==undefined&&v!==''){if(f.fs.includes('金额')||f.fs==='数量'||f.fs==='已付金额'){const n=parseFloat(String(v).replace(/[,¥$]/g,''));if(!isNaN(n))fields[f.fs]=n}else fields[f.fs]=String(v)}});
-    const cr=await(await fetch(ou('/feishu'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:fs.aid,appSecret:fs.as,appToken:fs.at,tableId:fc.tid,fields})})).json();
+    const fields={}; FM[x.t].forEach(f=>{const v=x.f?.[f.t];if(v!==undefined&&v!==''){if(f.fs.includes('金额')||f.fs==='数量'||f.fs==='已付金额'||f.fs==='单价'){const n=parseFloat(String(v).replace(/[,¥$€£]/g,''));if(!isNaN(n)&&n>0)fields[f.fs]=n}else fields[f.fs]=String(v)}});
+    const cr=await(await fetch(workerBase+'/feishu',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tableId:fc.tid,fields})})).json();
     if(cr.code===0){h[i]={...h[i],rid:cr.data?.record?.record_id};saveHist(h);if(msgEl)msgEl.innerHTML=`<div class="notice ok" style="margin-top:8px">✅ 已写入</div>`;doSync();}
     else{if(msgEl)msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(cr.msg||'失败')}</div>`;}
   }catch(e){if(msgEl)msgEl.innerHTML=`<div class="notice fail" style="margin-top:8px">❌ ${H(e.message)}</div>`;}
@@ -823,8 +838,10 @@ function render(){clearErr();const pages={overview:pgOv,scanner:pgScanner,rnd:pg
    PAGE: OVERVIEW — 核心指标：待收/待付/垫付/生产/履约
 ══════════════════════════════════════════════ */
 function pgOv(){
-  // 生产订单：待付款
+  // 生产订单：按订单号去重
   const prodActive = DB.productionOrders.filter(o=>o.status!=='已完成'&&o.status!=='已取消');
+  const prodActiveCount = new Set(prodActive.map(o=>o.orderNo||o._id)).size;
+  const prodTotalCount  = new Set(DB.productionOrders.map(o=>o.orderNo||o._id)).size;
   const prodDueByCur = {};
   DB.productionOrders.forEach(o=>{
     const cur=(o.currency||o['币种']||'CNY').toUpperCase();
@@ -832,8 +849,10 @@ function pgOv(){
     if(due>0) prodDueByCur[cur]=(prodDueByCur[cur]||0)+due;
   });
 
-  // B端订单：待收款、待履约
+  // B端订单：按订单号去重
   const bActive = DB.bOrders.filter(o=>o.status!=='已完结'&&o.status!=='已取消');
+  const bActiveCount = new Set(bActive.map(o=>o.orderNo||o._id)).size;
+  const bTotalCount  = new Set(DB.bOrders.map(o=>o.orderNo||o._id)).size;
   const bDueByCur = {};
   DB.bOrders.forEach(o=>{
     const cur=(o.currency||o['币种']||'CNY').toUpperCase();
@@ -854,11 +873,11 @@ function pgOv(){
 
   return `
   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">
-    ${kpiCur('💰 B端待收款', bDueByCur, bActive.length+'条活跃', 'var(--amt-due)')}
-    ${kpiCur('📤 生产待付款', prodDueByCur, prodActive.length+'条进行中', 'var(--orange)')}
+    ${kpiCur('💰 B端待收款', bDueByCur, bActiveCount+'单活跃', 'var(--amt-due)')}
+    ${kpiCur('📤 生产待付款', prodDueByCur, prodActiveCount+'单进行中', 'var(--orange)')}
     ${kpiCur('⚠️ 垫付未还', advUnretByCur, DB.advances.filter(p=>p.status!=='已还清').length+'笔', 'var(--red)')}
-    ${kpi('🏭 进行中生产', prodActive.length+'', '共'+DB.productionOrders.length+'条订单', 'var(--blue)')}
-    ${kpi('🤝 待履约B端', bActive.length+'', '共'+DB.bOrders.length+'条订单', 'var(--purple)')}
+    ${kpi('🏭 进行中生产', prodActiveCount+'', '共'+prodTotalCount+'张订单', 'var(--blue)')}
+    ${kpi('🤝 待履约B端', bActiveCount+'', '共'+bTotalCount+'张订单', 'var(--purple)')}
   </div>
 
   <div class="sec"><div class="sec-hdr"><span class="sec-title">⚠️ 垫付未还</span><button class="sec-more" onclick="setTab('us')">查看全部 →</button></div>
@@ -976,7 +995,7 @@ function pgB2B(){
 function pgSet(){
   const fs=cfg.fs||{};
   const tblRows=[['产品',DB.products.length,'var(--blue)'],['生产订单',DB.productionOrders.length,'var(--orange)'],['B端订单',DB.bOrders.length,'var(--amt-total)'],['垫付',DB.advances.length,'var(--red)'],['出货',DB.shipments.length,'var(--purple)'],['开票',DB.invoices.length,'var(--green)']];
-  const FT=[{k:'production',l:'📦 生产订单',c:'var(--blue)',dt:'tblyUdlkUkAGiJwo'},{k:'b2b',l:'🤝 B端订单',c:'var(--green)',dt:'tbl1vDHZlSKGBeI7'},{k:'ship_in',l:'📥📤 出货记录（收货+发货共用）',c:'var(--orange)',dt:'tbl5tQRwRLchLiL8'},{k:'advance',l:'💰 垫付款',c:'var(--purple)',dt:'tbl7FGIDEtkZBid8'},{k:'invoice',l:'🧾 开票',c:'var(--red)',dt:'tbl9EmtJeZ7enX5b'}];
+  const FT=[{k:'rnd',l:'🔬 研发生产',c:'var(--blue)',dt:'tbl64Snllt6Foss9'},{k:'production',l:'📦 生产订单',c:'var(--orange)',dt:'tblyUdlkUkAGiJwo'},{k:'b2b',l:'🤝 B端订单',c:'var(--green)',dt:'tbl1vDHZlSKGBeI7'},{k:'ship_in',l:'📥📤 出货记录（收货+发货共用）',c:'var(--teal)',dt:'tbl5tQRwRLchLiL8'},{k:'advance',l:'💰 垫付款',c:'var(--purple)',dt:'tbl7FGIDEtkZBid8'},{k:'invoice',l:'🧾 开票',c:'var(--red)',dt:'tbl9EmtJeZ7enX5b'}];
   return `
   <div class="phdr"><div class="pt">⚙ 配置</div></div>
   <div class="cfg-section">
@@ -1006,7 +1025,7 @@ function pgSet(){
 ══════════════════════════════════════════════ */
 document.getElementById('d-date').textContent = new Date().toLocaleDateString('zh-CN', {month:'long',day:'numeric',weekday:'short'});
 const DEFAULT_FS = {
-  production:{tid:'tblyUdlkUkAGiJwo'},b2b:{tid:'tbl1vDHZlSKGBeI7'},
+  rnd:{tid:'tbl64Snllt6Foss9'},production:{tid:'tblyUdlkUkAGiJwo'},b2b:{tid:'tbl1vDHZlSKGBeI7'},
   ship_in:{tid:'tbl5tQRwRLchLiL8'},advance:{tid:'tbl7FGIDEtkZBid8'},invoice:{tid:'tbl9EmtJeZ7enX5b'}
 };
 Object.entries(DEFAULT_FS).forEach(([k,v])=>{ if(!cfg.fs[k]) cfg.fs[k]=v; });
