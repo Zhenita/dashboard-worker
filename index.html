@@ -663,19 +663,18 @@ function autoDetect(d) {
 */
 function buildFields(key, data) {
   const fields = {};
-  // 飞书数字字段白名单（包含这些关键词才转数字，其余发字符串）
-  const NUM_FIELDS = new Set(['订单金额','垫付金额','开票金额','已付金额','已收金额','单价','数量','金额']);
+  // 飞书数字类型字段（这些字段飞书设置为数字，必须发数字不能发字符串）
+  const NUM_FS = new Set(['数量','单价','订单金额','垫付金额','开票金额','已付金额','已收金额','金额','单价']);
   FM[key].forEach(f => {
     const v = data[f.t];
     if (v === undefined || v === '' || v === null) return;
-    const fsName = f.fs;
-    const isNum = NUM_FIELDS.has(fsName) || [...NUM_FIELDS].some(n => fsName.includes(n));
+    const isNum = NUM_FS.has(f.fs) || f.fs.includes('金额') || f.fs.includes('单价') || f.fs === '数量';
     if (isNum) {
       const n = parseFloat(String(v).replace(/[,¥$€£\s]/g, ''));
-      if (!isNaN(n)) fields[fsName] = n;
-      else if (String(v).trim()) fields[fsName] = String(v); // fallback 文本
+      if (!isNaN(n)) fields[f.fs] = n; // 发数字
+      // 如果解析失败就不发这个字段，避免报错
     } else {
-      fields[fsName] = String(v);
+      fields[f.fs] = String(v); // 发字符串
     }
   });
   return fields;
