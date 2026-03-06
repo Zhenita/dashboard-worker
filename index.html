@@ -283,7 +283,7 @@ async function doSync() {
 ══════════════════════════════════════════════ */
 const N = v => parseFloat(v) || 0;
 const F = n => N(n).toLocaleString('zh-CN', { minimumFractionDigits:2, maximumFractionDigits:2 });
-const H = s => String(s||'').replace(/&/g,'&amp;').replace(/\x3C/g,'&lt;').replace(/>/g,'&gt;');
+const H = s => String(s||'').replace(/&/g,'&amp;').replace(/\x3C/g,'&lt;').replace(/\x3E/g,'&gt;');
 
 const BM = {
   '研发中':['var(--blue)','var(--blue-bg)'],'生产中':['var(--orange)','var(--orange-bg)'],
@@ -787,7 +787,8 @@ async function runSaveToFeishu() {
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:cr.data?.record?.record_id},...getHist()]);
         doSync();
       } else SC.msg={fail:`❌ ${cr.msg||'失败'}${cr.detail?.msg?' → '+cr.detail.msg:''}${cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):''}${cr.debug_sent?'\n发送字段:'+cr.debug_sent.join(','):''}`};
-  } catch(e){SC.msg={fail:e.message}} SC.saving=false; render();
+    }
+  } catch(e){SC.msg={fail:e.message};} SC.saving=false; render();
 }
 
 /* ══════════════════════════════════════════════
