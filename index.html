@@ -247,8 +247,8 @@ if (!cfg.fs) cfg.fs = {};
 const saveC = () => localStorage.setItem(CK, JSON.stringify(cfg));
 const du = p => cfg.dashboardUrl.replace(/\/$/, '') + p;
 const ou = p => cfg.ocrUrl.replace(/\/$/, '') + p;
-const getHist = () => { try { return JSON.parse(localStorage.getItem('n7r-hist')) || []; } catch { return []; } };
-const saveHist = h => { try { localStorage.setItem('n7r-hist', JSON.stringify(h.slice(0, 50))); } catch {} };
+const getHist = () => { try { return JSON.parse(localStorage.getItem('n7r-hist')) || []; } catch(e) { return []; } };
+const saveHist = h => { try { localStorage.setItem('n7r-hist', JSON.stringify(h.slice(0, 50))); } catch(e) {} };
 
 function saveFsField(key, val) { cfg.fs[key] = val; saveC(); }
 function saveFsTid(tableKey, val) { if (!cfg.fs[tableKey]) cfg.fs[tableKey] = {}; cfg.fs[tableKey].tid = val; saveC(); }
@@ -283,7 +283,7 @@ async function doSync() {
 ══════════════════════════════════════════════ */
 const N = v => parseFloat(v) || 0;
 const F = n => N(n).toLocaleString('zh-CN', { minimumFractionDigits:2, maximumFractionDigits:2 });
-const H = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const H = s => String(s||'').replace(/&/g,'&amp;').replace(/\x3C/g,'&lt;').replace(/>/g,'&gt;');
 
 const BM = {
   '研发中':['var(--blue)','var(--blue-bg)'],'生产中':['var(--orange)','var(--orange-bg)'],
@@ -537,7 +537,7 @@ async function checkDuplicate(tableKey, orderNo) {
       body: JSON.stringify({ tableId: fc.tid, action: 'search_order', orderNo })
     })).json();
     return tk.exists === true;
-  } catch { return false; }
+  } catch(e) { return false; }
 }
 
 /* ══════════════════════════════════════════════
@@ -627,17 +627,23 @@ const cfgKey = k => k==='ship_out' ? 'ship_in' : k;
 function doMap(key, data) {
   data = data || SC.result; SC.target = key;
   if (!data || data.error) { SC.mapping = null; return; }
+  const h = data.header || {};
+  // 根据单据类型决定"对方"是 from 还是 to
+  // 采购/收货/垫付: 对方是卖方 = from
+  // 销售/发货/B端: 对方是买方 = to
+  const buyerTypes = new Set(['b2b', 'ship_out', 'invoice']);
+  const counterparty = buyerTypes.has(key)
+    ? (h.to || h.supplier || h.from || '')   // 销售类：对方是买方(to)
+    : (h.from || h.supplier || h.to || '');  // 采购类：对方是卖方(from)
   const m = {};
   FM[key].forEach(f => {
     if (f.f==='_auto') m[f.t] = f.v;
-    // [FIX #3] _sku → 用 it.sku 字段（SKU编码），不是产品名
+    else if (f.f==='supplier') m[f.t] = counterparty;
     else if (f.f==='_sku' && data.items?.length) m[f.t] = data.items.map(i=>i.sku||'').filter(Boolean).join(', ');
-    // items → 产品名称（完整描述）
     else if (f.f==='items' && data.items) m[f.t] = data.items.map(i=>i.item||i.name||'').filter(Boolean).join(', ');
     else if (f.f==='totalQty' && data.items) m[f.t] = data.items.reduce((s,i)=>s+(parseFloat(i.qty)||0), 0);
-    // _unitPrice → 单品单价（多品时取第一个）
     else if (f.f==='_unitPrice' && data.items?.length) m[f.t] = data.items[0]?.unitPrice || data.items[0]?.price || '';
-    else if (data.header?.[f.f] !== undefined) m[f.t] = data.header[f.f];
+    else if (h[f.f] !== undefined) m[f.t] = h[f.f];
     else if (data[f.f] !== undefined) m[f.t] = data[f.f];
     else m[f.t] = '';
   });
@@ -743,14 +749,14 @@ async function runSaveToFeishu() {
         SC.msg={ok:`出货 ${cr.data?.success_count||records.length} 行写入成功`};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:'batch'},...getHist()]);
         doSync();
-      } else SC.msg={fail:(cr.msg||'失败')+(cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):'')};
+      } else SC.msg={fail:`❌ ${cr.msg||'失败'}${cr.detail?.msg?' → '+cr.detail.msg:''}${cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):''}${cr.debug_sent?'\n发送字段:'+cr.debug_sent.join(','):''}` };
 
     // 生产/B端 多产品分行写入
     } else if ((isProd||isB2b) && hasMultiItems) {
       const records = res.items.map(it => {
         const row = { ...mp };
-        row['SKU'] = it.sku || '';                          // SKU编码
-        row['产品名称'] = it.item || it.name || '';          // 产品描述
+        row['SKU'] = it.sku || '';
+        row['产品名称'] = it.item || it.name || '';
         row['数量'] = it.qty || '';
         row['单价'] = it.unitPrice || it.price || '';
         row['订单金额'] = it.subtotal || it.amount || '';
@@ -761,8 +767,7 @@ async function runSaveToFeishu() {
         SC.msg={ok:`${cr.data?.success_count||records.length}行写入成功`};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:'batch'},...getHist()]);
         doSync();
-      } else SC.msg={fail:(cr.msg||'失败')+(cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):'')};
-
+      } else SC.msg={fail:`❌ ${cr.msg||'失败'}${cr.detail?.msg?' → '+cr.detail.msg:''}${cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):''}` };
     // 单行写入
     } else {
       const fields = buildFields(key, mp);
@@ -781,8 +786,7 @@ async function runSaveToFeishu() {
         SC.msg={ok:'写入成功 · '+cr.data?.record?.record_id};
         saveHist([{d:new Date().toISOString(),t:key,f:mp,r:res,rid:cr.data?.record?.record_id},...getHist()]);
         doSync();
-      } else SC.msg={fail:(cr.msg||'失败')+(cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):'')};
-    }
+      } else SC.msg={fail:`❌ ${cr.msg||'失败'}${cr.detail?.msg?' → '+cr.detail.msg:''}${cr.debug_fields?'\n飞书字段:'+cr.debug_fields.join(','):''}${cr.debug_sent?'\n发送字段:'+cr.debug_sent.join(','):''}`};
   } catch(e){SC.msg={fail:e.message}} SC.saving=false; render();
 }
 
@@ -890,6 +894,43 @@ function pgOv(){
   <div class="card"><div class="tw"><table><thead><tr><th>订单号</th><th>来源</th><th>客户</th><th>SKU</th><th>产品名称</th><th>数量</th><th>单价</th><th>总金额</th><th>已收</th><th>待收</th><th>付款</th><th>开票</th></tr></thead><tbody>${bTable(bActive,'ov2')}</tbody></table></div></div></div>`;
 }
 
+/* PAGE: SCANNER helpers */
+function setPartyField(k, v) { SC.mapping[k]=v; render(); }
+async function pingWorker() {
+  const el = document.getElementById('ping-res');
+  if (el) el.textContent = '⏳ 测试中...';
+  const base = (cfg.dashboardUrl || '').replace(/\/$/,'');
+  if (!base) { if(el) el.innerHTML = '<span style="color:var(--red)">❌ 未配置 Worker URL</span>'; return; }
+  try {
+    const r = await fetch(base + '/api/ping').then(r=>r.json());
+    if (r.ok) {
+      if(el) el.innerHTML = '<span style="color:var(--green)">✓ 飞书连接正常</span>';
+    } else {
+      if(el) el.innerHTML = '<span style="color:var(--red)">❌ ' + (r.error||r.step||'失败') + '</span>';
+    }
+  } catch(e) { if(el) el.innerHTML = '<span style="color:var(--red)">❌ 网络错误: ' + e.message + '</span>'; }
+}
+function buildMappingRows(mp) {
+  const PARTY_KEYS = new Set(['客户名称','供应商','对方名称']);
+  const fromV = SC.result?.header?.from || '';
+  const toV   = SC.result?.header?.to   || '';
+  return Object.entries(mp).map(([k,v]) => {
+    const isParty = PARTY_KEYS.has(k);
+    let hint = '';
+    if (isParty && (fromV || toV)) {
+      const btns = [];
+      if (fromV) btns.push('<button class="pill" style="font-size:11px;padding:2px 8px" onclick="setPartyField('+JSON.stringify(k)+','+JSON.stringify(fromV)+')">↑ From: '+H(fromV)+'</button>');
+      if (toV)   btns.push('<button class="pill" style="font-size:11px;padding:2px 8px" onclick="setPartyField('+JSON.stringify(k)+','+JSON.stringify(toV)+')">↓ To: '+H(toV)+'</button>');
+      hint = '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">'+btns.join('')+'</div>';
+    }
+    return '<div class="map-row" style="flex-direction:column;align-items:flex-start;gap:4px">'
+      + '<div style="display:flex;width:100%;align-items:center;gap:8px">'
+      + '<div class="map-key" style="flex-shrink:0">'+H(k)+'</div>'
+      + '<input class="fi fi-sm" style="flex:1" value="'+H(String(v))+'" onchange="SC.mapping['+JSON.stringify(k)+']=this.value">'
+      + '</div>'+hint+'</div>';
+  }).join('');
+}
+
 /* PAGE: SCANNER */
 function pgScanner(){
   const hist=getHist(), res=SC.result, tgt=SC.target, mp=SC.mapping;
@@ -903,7 +944,7 @@ function pgScanner(){
   </div>`;
   const rightCol=`<div>
     ${res&&!res.error?`<div class="card" style="margin-bottom:16px"><div style="padding:14px 16px 10px;font-weight:700;border-bottom:1px solid var(--border2)">🎯 写入目标 ${tgt?'<span style="font-size:12px;color:var(--green);font-weight:400;margin-left:8px">已识别</span>':'<span style="font-size:12px;color:var(--orange);font-weight:400;margin-left:8px">请选择</span>'}</div><div style="padding:12px 16px"><div class="tgt-grid">${SCAN_TABLES.map(t=>`<div class="tgt-btn${tgt===t.key?' sel':''}" onclick="doMap('${t.key}');render()" style="${tgt===t.key?'border-color:'+t.c:''}"><div class="tgt-icon">${t.icon}</div><div class="tgt-label" style="color:${t.c}">${t.label}</div><div class="tgt-desc">${t.desc}</div></div>`).join('')}</div></div></div>`:`<div style="text-align:center;padding:40px;color:var(--t4)"><div style="font-size:48px;margin-bottom:12px">👈</div><div>上传后显示映射选项</div></div>`}
-    ${tgt&&mp?`<div class="card"><div style="padding:14px 16px 10px;font-weight:700;border-bottom:1px solid var(--border2)">🔗 字段映射<span style="font-size:12px;font-weight:400;color:var(--t4);margin-left:8px">${(tgt==='ship_in'||tgt==='ship_out')&&(SC.result?.items?.length>1)?'📦 多产品将分'+SC.result.items.length+'行写入':''}</span></div><div style="padding:14px 16px">${Object.entries(mp).map(([k,v])=>`<div class="map-row"><div class="map-key">${H(k)}</div><input class="fi fi-sm" value="${H(String(v))}" onchange="SC.mapping['${k}']=this.value"></div>`).join('')}<div style="display:flex;gap:10px;margin-top:16px"><button class="btn btn-primary" style="flex:1" onclick="runSaveToFeishu()" ${SC.saving?'disabled':''}>${SC.saving?'⏳':'🪁 写入飞书'}</button><button class="btn btn-ghost" onclick="SC.msg=null;saveHist([{d:new Date().toISOString(),t:SC.target,f:SC.mapping,r:SC.result},...getHist()]);SC.msg={ok:'已保存'};render()">💾 保存</button></div>${SC.msg?`<div class="notice ${SC.msg.ok?'ok':'fail'}" style="margin-top:10px">${SC.msg.ok||('❌ '+SC.msg.fail)}</div>`:''}</div></div>`:''}
+    ${tgt&&mp?`<div class="card"><div style="padding:14px 16px 10px;font-weight:700;border-bottom:1px solid var(--border2)">🔗 字段映射<span style="font-size:12px;font-weight:400;color:var(--t4);margin-left:8px">${(tgt==='ship_in'||tgt==='ship_out')&&(SC.result?.items?.length>1)?'📦 多产品将分'+SC.result.items.length+'行写入':''}</span></div><div style="padding:14px 16px">${buildMappingRows(mp)}<div style="display:flex;gap:10px;margin-top:16px"><button class="btn btn-primary" style="flex:1" onclick="runSaveToFeishu()" ${SC.saving?'disabled':''}>${SC.saving?'⏳':'🪁 写入飞书'}</button><button class="btn btn-ghost" onclick="SC.msg=null;saveHist([{d:new Date().toISOString(),t:SC.target,f:SC.mapping,r:SC.result},...getHist()]);SC.msg={ok:'已保存'};render()">💾 保存</button></div>${SC.msg?`<div class="notice ${SC.msg.ok?'ok':'fail'}" style="margin-top:10px;white-space:pre-wrap">${SC.msg.ok||SC.msg.fail}</div>`:''}</div></div>`:''}
   </div>`;
   const histH=hist.length===0?'':`<div class="sec"><div class="sec-hdr"><span class="sec-title">🗂 录入历史 <span style="font-size:14px;font-weight:400;color:var(--t4)">${hist.length}条</span></span><button class="btn-sm btn-danger" onclick="if(confirm('清空？')){saveHist([]);render()}">清空</button></div>${hist.map((x,i)=>{const tbl=SCAN_TABLES.find(t=>t.key===x.t);const synced=x.rid&&x.rid!=='本地';const isO=HIST_OPEN.has(i);const pre=Object.entries(x.f||{}).filter(([,v])=>v).slice(0,4).map(([k,v])=>`${k}:${v}`).join(' · ');return`<div class="hist-card" style="border-left:3px solid ${tbl?.c||'var(--t3)'}"><div class="hist-header" onclick="togHist(${i})"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--t4);font-size:11px">${isO?'▼':'▶'}</span><span style="font-size:18px">${tbl?.icon||'📄'}</span><span class="badge" style="color:${tbl?.c||'var(--t3)'};background:${tbl?.c||'var(--t3)'}18">${tbl?.label||x.t}</span>${synced?'<span class="badge" style="color:var(--green);background:var(--green-bg)">✓ 飞书</span>':'<span class="badge" style="color:var(--t4);background:var(--bg2)">本地</span>'}</div><span style="font-size:12px;color:var(--t4)">${new Date(x.d).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>${!isO?`<div class="hist-preview">${H(pre)}</div>`:`<div class="hist-body" onclick="event.stopPropagation()"><div style="margin-top:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">${Object.entries(x.f||{}).map(([k,v])=>`<div style="padding:6px 10px;background:var(--bg2);border-radius:var(--rx);border:1px solid var(--border)"><div style="font-size:10px;color:var(--t4)">${H(k)}</div><div style="font-size:13px;font-weight:600">${H(String(v||'(空)'))}</div></div>`).join('')}</div>${x.r?.items?.length?`<div class="tw" style="margin-bottom:14px"><table style="font-size:13px"><thead><tr><th>SKU/产品</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>${x.r.items.map(it=>`<tr><td class="fw6">${H(it.item||it.name||'-')}</td><td>${it.qty||'-'}</td><td>${it.unitPrice||'-'}</td><td class="amt" style="color:var(--amt-total)">${it.subtotal||'-'}</td></tr>`).join('')}</tbody></table></div>`:''}<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-sm btn-success" onclick="histSendFeishu(${i})" id="hbtn-${i}">🪁 ${synced?'重发':'发到飞书'}</button><button class="btn-sm btn-info" onclick="histCopy(${i})">📋 复制</button><button class="btn-sm btn-danger" onclick="histDel(${i})">删除</button></div><div id="hmsg-${i}"></div></div></div>`}</div>`}).join('')}</div>`;
   return `<div class="phdr"><div class="pt">📷 扫描录入</div><div class="ps">上传单据 → AI识别 → 一键写入飞书</div></div><div class="scan-layout">${leftCol}${rightCol}</div>${histH}`;
@@ -1002,7 +1043,11 @@ function pgSet(){
     <div class="cfg-title">🔌 Worker 连接</div>
     <div style="margin-bottom:12px"><label class="fl">业务数据 Worker URL</label><input id="ci" class="fi" value="${H(cfg.dashboardUrl)}"></div>
     <div style="margin-bottom:16px"><label class="fl">OCR + Gemini Worker URL</label><input id="ci2" class="fi" value="${H(cfg.ocrUrl)}"></div>
-    <button class="btn btn-primary" onclick="saveCfgField('dashboardUrl',document.getElementById('ci').value.trim().replace(/\\/$/,''));saveCfgField('ocrUrl',document.getElementById('ci2').value.trim().replace(/\\/$/,''));doSync()">保存</button>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="saveCfgField('dashboardUrl',document.getElementById('ci').value.trim().replace(/\\/$/,''));saveCfgField('ocrUrl',document.getElementById('ci2').value.trim().replace(/\\/$/,''));doSync()">保存</button>
+      <button class="btn btn-ghost" onclick="pingWorker()">🔍 测试飞书连接</button>
+      <span id="ping-res" style="font-size:13px"></span>
+    </div>
   </div>
   <div class="cfg-section">
     <div class="cfg-title">🔑 飞书连接</div>
