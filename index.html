@@ -36,15 +36,15 @@ input:focus,textarea:focus{border-color:var(--accent)!important}
 
 /* ── HEADER ── */
 header{position:sticky;top:0;z-index:300;background:rgba(249,249,248,.93);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 32px;height:64px;display:flex;align-items:center;justify-content:space-between}
-.logo{display:flex;align-items:center;gap:14px}
-.logo-chip{background:linear-gradient(135deg,#1A1A1A,#444);border-radius:9px;padding:5px 12px;font-family:var(--fm);font-size:15px;font-weight:700;color:#fff;letter-spacing:1.5px}
-.logo-title{font-size:28px;font-weight:800;color:var(--t1);letter-spacing:-.6px}
-.logo-sep{width:1px;height:22px;background:var(--border);margin:0 2px}
-.logo-sub{font-size:13px;color:var(--t3)}
-.hdr-r{display:flex;align-items:center;gap:12px}
+.logo{display:flex;align-items:center;gap:14px;min-width:0}
+.logo-chip{background:linear-gradient(135deg,#1A1A1A,#444);border-radius:9px;padding:5px 12px;font-family:var(--fm);font-size:15px;font-weight:700;color:#fff;letter-spacing:1.5px;flex-shrink:0}
+.logo-title{font-size:28px;font-weight:800;color:var(--t1);letter-spacing:-.6px;white-space:nowrap}
+.logo-sep{width:1px;height:22px;background:var(--border);margin:0 2px;flex-shrink:0}
+.logo-sub{font-size:13px;color:var(--t3);white-space:nowrap}
+.hdr-r{display:flex;align-items:center;gap:12px;flex-shrink:0}
 .hdr-date{font-size:13px;color:var(--t3);font-weight:500}
 .sync-meta{font-size:12px;color:var(--t4)}
-.sync-btn{display:flex;align-items:center;gap:7px;padding:8px 18px;background:var(--surface);border:1px solid var(--border);border-radius:22px;font-size:13px;font-weight:600;color:var(--t2);cursor:pointer;font-family:var(--f);transition:all .15s;box-shadow:var(--shadow)}
+.sync-btn{display:flex;align-items:center;gap:7px;padding:8px 18px;background:var(--surface);border:1px solid var(--border);border-radius:22px;font-size:13px;font-weight:600;color:var(--t2);cursor:pointer;font-family:var(--f);transition:all .15s;box-shadow:var(--shadow);white-space:nowrap}
 .sync-btn:hover{border-color:var(--accent);color:var(--accent)}
 .sync-btn.loading{opacity:.5;pointer-events:none}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
@@ -52,9 +52,9 @@ header{position:sticky;top:0;z-index:300;background:rgba(249,249,248,.93);backdr
 @keyframes blink{to{opacity:.2}}
 
 /* ── NAV ── */
-nav{position:sticky;top:64px;z-index:200;background:rgba(249,249,248,.93);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;overflow-x:auto}
+nav{position:sticky;top:64px;z-index:200;background:rgba(249,249,248,.93);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch}
 nav::-webkit-scrollbar{display:none}
-nav button{padding:13px 18px;font-size:14.5px;font-weight:500;color:var(--t3);border:none;background:none;cursor:pointer;white-space:nowrap;font-family:var(--f);border-bottom:2.5px solid transparent;transition:all .14s}
+nav button{padding:13px 18px;font-size:14.5px;font-weight:500;color:var(--t3);border:none;background:none;cursor:pointer;white-space:nowrap;font-family:var(--f);border-bottom:2.5px solid transparent;transition:all .14s;flex-shrink:0}
 nav button.active{font-weight:700;color:var(--accent);border-bottom-color:var(--accent)}
 nav button:hover:not(.active){color:var(--t1)}
 
@@ -88,8 +88,8 @@ main{padding:28px 32px;max-width:1600px;margin:0 auto;width:100%}
 .pill:hover:not(.on){color:var(--t1);border-color:rgba(0,0,0,.15)}
 
 /* ── TABLE ── */
-.tw{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:14px;font-family:var(--f)}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%}
+table{width:100%;border-collapse:collapse;font-size:14px;font-family:var(--f);min-width:600px}
 thead tr{background:var(--bg2)}
 th{padding:10px 16px;text-align:left;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);white-space:nowrap}
 td{padding:12px 16px;border-bottom:1px solid var(--border2);vertical-align:middle;color:var(--t2);font-size:14px}
@@ -168,8 +168,54 @@ tbody tr:hover td{background:rgba(0,0,0,.015)}
 /* ── ARCHIVED ROW ── */
 .archived-row td{opacity:.5}
 
-@media(max-width:900px){.g5,.g4{grid-template-columns:1fr 1fr}}
-@media(max-width:600px){.g5,.g4,.g3,.g2{grid-template-columns:1fr}main,header{padding-left:16px;padding-right:16px}nav{padding:0 12px}}
+/* ════════════════════════════════
+   RESPONSIVE
+════════════════════════════════ */
+@media(max-width:900px){
+  .g5,.g4{grid-template-columns:1fr 1fr}
+}
+
+@media(max-width:700px){
+  /* Header */
+  header{padding:0 16px;height:54px}
+  .logo-title{font-size:20px}
+  .logo-sep,.logo-sub,.hdr-date,.sync-meta{display:none}
+  .logo-chip{font-size:13px;padding:4px 10px}
+  .sync-btn{padding:7px 14px;font-size:12px;gap:5px}
+
+  /* Nav — 可横滑，字小一点padding减少 */
+  nav{top:54px;padding:0 8px}
+  nav button{padding:10px 12px;font-size:13px}
+
+  /* Main */
+  main{padding:16px}
+
+  /* Grids */
+  .g5,.g4,.g3{grid-template-columns:1fr 1fr}
+  .g2{grid-template-columns:1fr 1fr}
+
+  /* KPI */
+  .kpi{padding:14px 16px}
+  .kpi-v{font-size:22px}
+  .kpi-l{font-size:11px}
+
+  /* Page header */
+  .pt{font-size:19px}
+  .ps{font-size:13px}
+
+  /* Table font */
+  table{font-size:12px;min-width:500px}
+  td{padding:9px 10px;font-size:12px}
+  th{padding:8px 10px;font-size:10px}
+
+  /* Settings grid */
+  .cfg-section{padding:16px}
+}
+
+@media(max-width:480px){
+  .g5,.g4,.g3,.g2{grid-template-columns:1fr}
+  .kpi-v{font-size:26px}
+}
 </style>
 </head>
 <body>
@@ -177,7 +223,7 @@ tbody tr:hover td{background:rgba(0,0,0,.015)}
 <header>
   <div class="logo">
     <div class="logo-chip">N7R</div>
-    <span class="logo-title">N7R 业务看板</span>
+    <span class="logo-title">业务看板</span>
     <div class="logo-sep"></div>
     <span class="logo-sub">飞书实时同步</span>
   </div>
@@ -340,7 +386,7 @@ function normDB(raw) {
 const CUR_SYM = { USD:'$', CNY:'¥', EUR:'€', GBP:'£', SGD:'S$', JPY:'¥', HKD:'HK$', AUD:'A$' };
 function curSym(cur){ return CUR_SYM[(cur||'CNY').toUpperCase()] || (cur+'$'); }
 
-/* ── 汇率系统：以USD为基准，调用免费API ── */
+/* ── 汇率系统 ── */
 let FX = { rates:{}, updatedAt:null, loading:false };
 async function fetchFX() {
   if(FX.loading) return;
@@ -401,22 +447,12 @@ function kpiCur(l, map, hint, c) {
 
 /* ══════════════════════════════════════════════
    归档判断
-   
-   B端订单（卖给客户）：已付款 + 已发货 → 归档
-   生产订单（向供应商买）：已付款 + 已收货 → 归档
-   
-   "已归档" = 钱收到了（或我付完了）且货也到位了
-   → 从"待履约"移走，可以在归档列表里看到
 ══════════════════════════════════════════════ */
-
-// B端：判断是否已归档（已付款 + 已发货/已完结）
 function isBOrderArchived(g) {
   const payDone = g.pay === '已付款';
   const shipDone = g.fulfillSt === '已发货' || g.st === '已完结' || g.st === '已完成';
   return payDone && shipDone;
 }
-
-// 生产订单：判断是否已归档（已付款 + 已收货/已完结）
 function isProdOrderArchived(g) {
   const payDone = g.pay === '已付款';
   const shipDone = g.fulfillSt === '已收货' || g.st === '已完结' || g.st === '已完成';
@@ -444,8 +480,7 @@ function calcFulfillStatus(orderNo, orderQty, isProd) {
 }
 
 /* ══════════════════════════════════════════════
-   分组：把 orders 数组按 orderNo 合并成组
-   返回 [{k, rows, tot, paid, qty, cur, pay, st, fulfillSt, archived, ...}, ...]
+   分组
 ══════════════════════════════════════════════ */
 function groupOrders(orders, isProd) {
   const G = {};
@@ -463,10 +498,8 @@ function groupOrders(orders, isProd) {
     g.paid += N(o.paidAmount||0);
     g.qty  += N(o.qty||0);
     if(o.currency) g.cur = (o.currency||'CNY').toUpperCase();
-    // 付款状态：优先取"未完成"的（已付款是最终态）
     if(o.payStatus) g.pay = o.payStatus;
   });
-  // 计算履约状态 & 归档标记
   Object.values(G).forEach(g => {
     const autoSt = calcFulfillStatus(g.k, g.qty, isProd);
     g.fulfillSt = autoSt || g.st || '';
@@ -593,16 +626,13 @@ const TABS=[
   {k:'settings', l:'⚙ 配置'},
 ];
 let tab='overview', usT='adv', showArchived=false;
-// 下单出货页筛选
 let ordPayF='all', ordShipF='all';
-// B端页筛选
 let bPayF='all', bShipF='all';
 window._bShowArchived = false;
 function setTab(k){tab=k;renderNav();render();}
 function renderNav(){document.getElementById('nav').innerHTML=TABS.map(t=>`<button class="${tab===t.k?'active':''}" onclick="setTab('${t.k}')">${t.l}</button>`).join('');}
 function render(){clearErr();const pages={overview:pgOv,rnd:pgRnD,us:pgUS,orders:pgOrd,b2b:pgB2B,settings:pgSet};document.getElementById('pg').innerHTML=(pages[tab]||pgOv)();}
 
-// pill组渲染
 function pillGroup(label, options, current, onchangeFn) {
   return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     <span style="font-size:12px;font-weight:700;color:var(--t3);white-space:nowrap">${label}</span>
@@ -614,12 +644,10 @@ function pillGroup(label, options, current, onchangeFn) {
    PAGE: OVERVIEW
 ══════════════════════════════════════════════ */
 function pgOv(){
-  // B端：待履约 = 未归档的
   const bGroups = groupOrders(DB.bOrders, false);
   const bPending = bGroups.filter(g => !g.archived);
   const bArchived = bGroups.filter(g => g.archived);
 
-  // 生产订单：待处理 = 未归档的
   const prodGroups = groupOrders(DB.productionOrders, true);
   const prodPending = prodGroups.filter(g => !g.archived);
 
@@ -700,13 +728,10 @@ function pgUS(){
   }</div></div></div>`;
 }
 
-/* PAGE: ORDERS（采购/生产订单）*/
+/* PAGE: ORDERS */
 function pgOrd(){
   const allGroups = groupOrders(DB.productionOrders, true);
-
-  // 付款筛选
   const PAY_OPTS = [['all','全部'],['待付款','待付款'],['部分付款','部分付款'],['已付款','已付款']];
-  // 收货筛选
   const SHIP_OPTS = [['all','全部'],['待收货','待收货'],['部分收货','部分收货'],['已收货','已收货']];
 
   let filtered = allGroups;
@@ -717,7 +742,6 @@ function pgOrd(){
   const archived = filtered.filter(g => g.archived);
   const shown    = showArchived ? filtered : pending;
 
-  // KPI：全部未归档（不受筛选影响）
   const allPending = allGroups.filter(g => !g.archived);
   const allArchived = allGroups.filter(g => g.archived);
   const amtByCur={}, paidByCur={};
@@ -752,10 +776,7 @@ function setOrdShipF(v){ordShipF=v;}
 function pgB2B(){
   const allGroups = groupOrders(DB.bOrders, false);
   const bShowArchived = window._bShowArchived || false;
-
-  // 付款筛选
   const PAY_OPTS = [['all','全部'],['待付款','待付款'],['部分付款','部分付款'],['已付款','已付款']];
-  // 发货筛选
   const SHIP_OPTS = [['all','全部'],['待发货','待发货'],['部分发货','部分发货'],['已发货','已发货']];
 
   let filtered = allGroups;
@@ -766,7 +787,6 @@ function pgB2B(){
   const archived = filtered.filter(g => g.archived);
   const shown    = bShowArchived ? filtered : pending;
 
-  // KPI：全部未归档（不受筛选影响）
   const allPending  = allGroups.filter(g => !g.archived);
   const allArchived = allGroups.filter(g => g.archived);
   const amtByCur={}, paidByCur={};
@@ -824,7 +844,7 @@ function pgSet(){
     <div style="font-size:13px;color:var(--t4);margin-bottom:16px">上次同步：${lastSync?lastSync.toLocaleString('zh-CN'):'从未'}</div>
     <div style="border-top:1px solid var(--border);padding-top:16px">
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--t3)">🔍 查看飞书字段名</div>
-      ${FT.map(t=>`<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center"><span style="font-size:13px;min-width:200px">${t.l}</span><button class="btn-sm btn-muted" onclick="listFields('${t.k}')">查字段</button><span id="fields-${t.k}" style="font-size:12px;color:var(--t3)"></span></div>`).join('')}
+      ${FT.map(t=>`<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:13px;min-width:180px">${t.l}</span><button class="btn-sm btn-muted" onclick="listFields('${t.k}')">查字段</button><span id="fields-${t.k}" style="font-size:12px;color:var(--t3)"></span></div>`).join('')}
     </div>
   </div>
   <div class="cfg-section">
